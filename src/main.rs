@@ -1,20 +1,14 @@
 extern crate sdl2;
 
-use rand::Rng;
+use oxygin::eat::eat_system;
+use oxygin::ecs::ECS;
+use oxygin::input::handle_input_system;
+use oxygin::movement::move_system;
+use oxygin::render::render_system;
+use oxygin::{ColorComponent, Edible, InputState, Physics, Position, Size};
 use sdl2::event::Event;
-use sdl2::keyboard::{KeyboardState, Scancode};
 use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::Canvas;
-use sdl2::video::Window;
 use sdl2::EventPump;
-use slotmap::{DefaultKey, SecondaryMap, SlotMap};
-use std::any::{Any, TypeId};
-// use std::borrow::BorrowMut;
-use std::cell::{Ref, RefCell, RefMut};
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use std::rc::Rc;
 use std::time::Duration;
 
 fn find_sdl_gl_driver() -> Option<u32> {
@@ -26,191 +20,17 @@ fn find_sdl_gl_driver() -> Option<u32> {
     None
 }
 
-type Entity = DefaultKey;
-
-type EntityAllocator<K, V> = SlotMap<K, V>;
-
-type EntityMap<K, V> = SecondaryMap<K, V>;
-
 // TO IMPROVE
-// I want to remove the call to get ref then get component
+// I want to remove the call to get ref then get component DONE!!!!!
+
 // Have a way to get the player entity more easily
 // Add components to entities (if only syntactically) eg player.add_component<Position>(position)
 // maybe chainable
 // Break structure project to seperate out engine
 // Traces within the ECS rather than unwraps
+// Investigate component / resource register
 // Investigate plugins
 // investigate queries
-struct ComponentStorage {
-    storage: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>>,
-}
-
-impl ComponentStorage {
-    fn new() -> Self {
-        Self {
-            storage: HashMap::new(),
-        }
-    }
-
-    fn insert_into_entity_map<T>(&self, entity: Entity, component: T)
-    where
-        T: 'static + Component,
-    {
-        if let Some(mut entity_map) = self.get_mut::<T>() {
-            entity_map.insert(entity, component);
-        } else {
-            dbg!("poop");
-        }
-    }
-
-    fn register<T: Component + 'static>(&mut self)
-    where
-        T: 'static + Component,
-    {
-        let component: EntityMap<Entity, T> = EntityMap::new();
-
-        self.storage.insert(
-            TypeId::of::<T>(),
-            Rc::new(RefCell::new(Box::new(component))),
-        );
-    }
-
-    fn get<T>(&self) -> Option<Ref<'_, EntityMap<Entity, T>>>
-    where
-        T: 'static + Component,
-    {
-        let component_ref = self.storage.get(&TypeId::of::<T>())?;
-        Some(Ref::map(component_ref.borrow(), |component| {
-            component.downcast_ref::<EntityMap<Entity, T>>().unwrap()
-        }))
-    }
-
-    fn get_mut<T>(&self) -> Option<RefMut<'_, EntityMap<Entity, T>>>
-    where
-        T: 'static + Component,
-    {
-        let component_ref = self.storage.get(&TypeId::of::<T>())?;
-        Some(RefMut::map(component_ref.borrow_mut(), |component| {
-            component.downcast_mut::<EntityMap<Entity, T>>().unwrap()
-        }))
-    }
-}
-
-struct ECS {
-    components: ComponentStorage,
-    entity_allocator: EntityAllocator<Entity, ()>,
-}
-
-impl ECS {
-    fn new() -> Self {
-        Self {
-            components: ComponentStorage::new(),
-            entity_allocator: EntityAllocator::new(),
-        }
-    }
-
-    fn create_entity(&mut self) -> Entity {
-        self.entity_allocator.insert(())
-    }
-
-    fn register_component<T>(&mut self)
-    where
-        T: 'static + Component,
-    {
-        self.components.register::<T>();
-    }
-
-    pub fn get_component<T>(&self) -> Option<Ref<'_, EntityMap<Entity, T>>>
-    where
-        T: 'static + Component,
-    {
-        self.components.get::<T>()
-    }
-
-    pub fn get_mut_component<T>(&self) -> Option<RefMut<'_, EntityMap<Entity, T>>>
-    where
-        T: 'static + Component,
-    {
-        self.components.get_mut::<T>()
-    }
-
-    fn add_component<T: Component + 'static>(&mut self, entity: Entity, component: T)
-    where
-        T: 'static + Component,
-    {
-        self.components.insert_into_entity_map(entity, component);
-    }
-}
-
-trait Component {}
-
-struct ComponentRegister {
-    component_register: Vec<TypeId>,
-}
-
-impl ComponentRegister {
-    fn register_component<T: Component>(&mut self) {}
-}
-
-#[derive(Debug)]
-struct Position {
-    x: i32,
-    y: i32,
-}
-
-impl Component for Position {}
-
-struct Size {
-    size: u32,
-}
-
-impl Component for Size {}
-
-struct InputState {
-    up: bool,
-    right: bool,
-    down: bool,
-    left: bool,
-}
-
-impl Component for InputState {}
-
-impl InputState {
-    fn new() -> Self {
-        Self {
-            up: false,
-            right: false,
-            down: false,
-            left: false,
-        }
-    }
-}
-
-struct Physics {
-    speed: i32,
-}
-
-impl Component for Physics {}
-
-struct ColorComponent {
-    rgb: Color,
-}
-impl ColorComponent {
-    fn new(r: u8, g: u8, b: u8) -> Self {
-        Self {
-            rgb: Color::RGB(r, g, b),
-        }
-    }
-}
-
-impl Component for ColorComponent {}
-
-struct Edible {
-    eaten: bool,
-    calories: u32,
-}
-
-impl Component for Edible {}
 
 fn main() {
     const RENDER_NORMALIZATION: u32 = 1_000_000_000u32 / 60;
@@ -250,7 +70,7 @@ fn main() {
 
     let food = game.create_entity();
     game.add_component(food, Size { size: 10 });
-    game.add_component(food, Position { x: 800, y: 800 });
+    game.add_component(food, Position::random());
     game.add_component(food, ColorComponent::new(0, 255, 0));
     game.add_component(
         food,
@@ -262,13 +82,24 @@ fn main() {
 
     let drug = game.create_entity();
     game.add_component(drug, Size { size: 10 });
-    game.add_component(drug, Position { x: 300, y: 300 });
+    game.add_component(drug, Position::random());
     game.add_component(drug, ColorComponent::new(0, 0, 255));
-    game.add_component::<Edible>(
+    game.add_component(
         drug,
         Edible {
             eaten: false,
             calories: 100,
+        },
+    );
+    let drink = game.create_entity();
+    game.add_component(drink, Size { size: 10 });
+    game.add_component(drink, Position::random());
+    game.add_component(drink, ColorComponent::new(255, 0, 0));
+    game.add_component(
+        drink,
+        Edible {
+            eaten: false,
+            calories: 50,
         },
     );
 
@@ -285,6 +116,7 @@ fn main() {
         eat_system(&mut game);
 
         render_system(&game, &mut canvas);
+
         canvas.set_draw_color(Color::RGB(0, 0, 0));
 
         canvas.present();
@@ -294,158 +126,6 @@ fn main() {
             break;
         }
     }
-}
-
-trait System {}
-
-fn render_system(game: &ECS, canvas: &mut Canvas<Window>) {
-    let position_component = game.get_component::<Position>().unwrap();
-    let size_component = game.get_component::<Size>().unwrap();
-    let color_component = game.get_component::<ColorComponent>().unwrap();
-
-    for (key, position) in position_component.iter() {
-        let size = size_component.get(key).unwrap();
-        let color = color_component.get(key).unwrap();
-
-        canvas.set_draw_color(color.rgb);
-        canvas
-            .fill_rect(Rect::new(position.x, position.y, size.size, size.size))
-            .unwrap();
-    }
-}
-
-fn eat_system(game: &mut ECS) {
-    let eaten_entities = get_eaten_entities(game);
-
-    set_edible_eaten(game, &eaten_entities);
-
-    eat_edibles(game, &eaten_entities);
-
-    handle_eaten(game, &eaten_entities);
-
-    if eaten_entities.len() > 0 {
-        grow(game, &eaten_entities);
-    }
-}
-
-fn grow(game: &mut ECS, entities: &Vec<Entity>) {
-    let input_component = game.get_component::<InputState>().unwrap();
-    let edible_component = game.get_component::<Edible>().unwrap();
-    let mut size_component = game.get_mut_component::<Size>().unwrap();
-
-    for eaten in entities {
-        let edible = edible_component.get(*eaten).unwrap();
-        for player in input_component.keys() {
-            let player_size = size_component.get_mut(player).unwrap();
-            player_size.size = player_size.size + edible.calories;
-        }
-    }
-}
-
-fn set_edible_eaten(game: &mut ECS, entities: &Vec<Entity>) {
-    let mut edible_component = game.get_mut_component::<Edible>().unwrap();
-
-    entities.into_iter().for_each(|entity| {
-        let edible = edible_component.get_mut(*entity).unwrap();
-        edible.eaten = true;
-    })
-}
-
-fn get_eaten_entities(game: &mut ECS) -> Vec<Entity> {
-    let input_component = game.get_component::<InputState>().unwrap();
-    let position_component = game.get_component::<Position>().unwrap();
-    let size_component = game.get_component::<Size>().unwrap();
-    let edible_component = game.get_component::<Edible>().unwrap();
-    let mut eaten_entities: Vec<Entity> = vec![];
-
-    for input in input_component.keys() {
-        let player_position = position_component.get(input).unwrap();
-        let player_size = size_component.get(input).unwrap();
-        for edible_key in edible_component.keys() {
-            let edible_position = position_component.get(edible_key).unwrap();
-            let edible_size = size_component.get(edible_key).unwrap();
-            if check_collision(
-                &player_position,
-                &player_size,
-                &edible_position,
-                &edible_size,
-            ) {
-                eaten_entities.push(edible_key);
-            }
-        }
-    }
-
-    eaten_entities
-}
-
-fn handle_eaten(game: &mut ECS, entities: &Vec<Entity>) {
-    let mut edible_component = game.get_mut_component::<Edible>().unwrap();
-
-    entities.into_iter().for_each(|edible| {
-        let eaten_entity = edible_component.get_mut(*edible).unwrap();
-        eaten_entity.eaten = false;
-    })
-}
-
-fn eat_edibles(game: &mut ECS, entities: &Vec<Entity>) {
-    let mut position_component = game.get_mut_component::<Position>().unwrap();
-
-    entities.into_iter().for_each(|entity| {
-        let position = position_component.get_mut(*entity).unwrap();
-        position.x = rand::thread_rng().gen_range(1..1920);
-        position.y = rand::thread_rng().gen_range(1..1080);
-    });
-}
-
-fn handle_input_system(keyboard: KeyboardState, game: &mut ECS) {
-    let mut input_component = game.get_mut_component::<InputState>().unwrap();
-
-    for input in input_component.values_mut() {
-        input.up = keyboard.is_scancode_pressed(Scancode::Up);
-        input.right = keyboard.is_scancode_pressed(Scancode::Right);
-        input.down = keyboard.is_scancode_pressed(Scancode::Down);
-        input.left = keyboard.is_scancode_pressed(Scancode::Left);
-    }
-}
-
-fn move_system(game: &mut ECS) {
-    let input_component = game.get_component::<InputState>().unwrap();
-
-    let physics_component = game.get_component::<Physics>().unwrap();
-
-    let mut position_component = game.get_mut_component::<Position>().unwrap();
-
-    for (player_id, input) in input_component.iter() {
-        let speed = physics_component.get(player_id).unwrap();
-        if let Some(player) = position_component.get_mut(player_id) {
-            if input.up {
-                player.y = player.y - speed.speed;
-            }
-            if input.right {
-                player.x = player.x + speed.speed;
-            }
-            if input.down {
-                player.y = player.y + speed.speed;
-            }
-            if input.left {
-                player.x = player.x - speed.speed;
-            }
-        }
-    }
-}
-
-// fn collision_system(game: &
-
-//
-fn check_collision(position1: &Position, size1: &Size, position2: &Position, size2: &Size) -> bool {
-    if position1.x < (position2.x + size2.size as i32)
-        && (position1.x + size1.size as i32) > position2.x
-        && position1.y < (position2.y + size2.size as i32)
-        && position1.y + size1.size as i32 > position2.y
-    {
-        return true;
-    }
-    false
 }
 
 fn handle_events(event_pump: &mut EventPump) -> bool {
