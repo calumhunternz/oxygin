@@ -10,6 +10,7 @@ use sdl2::video::Window;
 use sdl2::EventPump;
 use slotmap::{DefaultKey, SecondaryMap, SlotMap};
 use std::any::{Any, TypeId};
+// use std::borrow::BorrowMut;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -31,11 +32,6 @@ type EntityAllocator<K, V> = SlotMap<K, V>;
 
 type EntityMap<K, V> = SecondaryMap<K, V>;
 
-struct ECS {
-    components: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>>,
-    entity_allocator: EntityAllocator<Entity, ()>,
-}
-
 // TO IMPROVE
 // I want to remove the call to get ref then get component
 // Have a way to get the player entity more easily
@@ -45,6 +41,112 @@ struct ECS {
 // Traces within the ECS rather than unwraps
 // Investigate plugins
 // investigate queries
+struct ComponentStorage {
+    storage: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>>,
+}
+
+impl ComponentStorage {
+    fn new() -> Self {
+        Self {
+            storage: HashMap::new(),
+        }
+    }
+
+    fn insert_into_entity_map<T>(&self, entity: Entity, component: T)
+    where
+        T: 'static + Component,
+    {
+        if let Some(mut entity_map) = self.get_mut::<T>() {
+            entity_map.insert(entity, component);
+        } else {
+            dbg!("poop");
+        }
+    }
+
+    fn register<T: Component + 'static>(&mut self)
+    where
+        T: 'static + Component,
+    {
+        let component: EntityMap<Entity, T> = EntityMap::new();
+
+        self.storage.insert(
+            TypeId::of::<T>(),
+            Rc::new(RefCell::new(Box::new(component))),
+        );
+    }
+
+    fn get<T>(&self) -> Option<Ref<'_, EntityMap<Entity, T>>>
+    where
+        T: 'static + Component,
+    {
+        let component_ref = self.storage.get(&TypeId::of::<T>())?;
+        Some(Ref::map(component_ref.borrow(), |component| {
+            component.downcast_ref::<EntityMap<Entity, T>>().unwrap()
+        }))
+    }
+
+    fn get_mut<T>(&self) -> Option<RefMut<'_, EntityMap<Entity, T>>>
+    where
+        T: 'static + Component,
+    {
+        let component_ref = self.storage.get(&TypeId::of::<T>())?;
+        Some(RefMut::map(component_ref.borrow_mut(), |component| {
+            component.downcast_mut::<EntityMap<Entity, T>>().unwrap()
+        }))
+    }
+}
+
+struct ECS2 {
+    components: ComponentStorage,
+    entity_allocator: EntityAllocator<Entity, ()>,
+}
+
+impl ECS2 {
+    fn new() -> Self {
+        Self {
+            components: ComponentStorage::new(),
+            entity_allocator: EntityAllocator::new(),
+        }
+    }
+
+    fn create_entity(&mut self) -> Entity {
+        self.entity_allocator.insert(())
+    }
+
+    fn register_component<T>(&mut self)
+    where
+        T: 'static + Component,
+    {
+        self.components.register::<T>();
+    }
+
+    pub fn get_component<T>(&self) -> Option<Ref<'_, EntityMap<Entity, T>>>
+    where
+        T: 'static + Component,
+    {
+        self.components.get::<T>()
+    }
+
+    pub fn get_mut_component<T>(&self) -> Option<RefMut<'_, EntityMap<Entity, T>>>
+    where
+        T: 'static + Component,
+    {
+        self.components.get_mut::<T>()
+    }
+
+    fn add_component<T: Component + 'static>(&mut self, entity: Entity, component: T)
+    where
+        T: 'static + Component,
+    {
+        self.components.insert_into_entity_map(entity, component);
+    }
+}
+
+struct ECS {
+    components: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>>,
+    // cool_components: ComponentStorage,
+    entity_allocator: EntityAllocator<Entity, ()>,
+}
 
 impl ECS {
     fn new() -> Self {
@@ -52,6 +154,7 @@ impl ECS {
         let components: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>> = HashMap::new();
         Self {
             components,
+            // cool_components: ComponentStorage::new(),
             entity_allocator,
         }
     }
@@ -75,6 +178,7 @@ impl ECS {
             .get(&TypeId::of::<EntityMap<Entity, T>>())
             .unwrap()
             .borrow_mut();
+
         let entity_map = binding.downcast_mut::<EntityMap<Entity, T>>().unwrap();
 
         entity_map.insert(entity, component);
@@ -105,15 +209,6 @@ impl ECS {
             marker: PhantomData,
         }
     }
-
-    // fn get_cool_component<T>(&self) -> &EntityMap<Entity, T>
-    // where
-    //     T: 'static + Component,
-    // {
-    //     let component_ref = self.components.get(&TypeId::of::<T>()).unwrap();
-    //     let component = component_ref.borrow();
-    //     component.downcast_ref::<EntityMap<Entity, T>>().unwrap()
-    // }
 }
 
 struct ComponentRef<'a, T> {
@@ -154,6 +249,7 @@ impl ComponentRegister {
     fn register_component<T: Component>(&mut self) {}
 }
 
+#[derive(Debug)]
 struct Position {
     x: i32,
     y: i32,
@@ -241,6 +337,18 @@ fn main() {
     game.register_component::<Physics>();
     game.register_component::<ColorComponent>();
     game.register_component::<Edible>();
+
+    let mut cool_game = ECS2::new();
+    cool_game.register_component::<Position>();
+
+    let cool_player = cool_game.create_entity();
+    cool_game.add_component::<Position>(cool_player, Position { x: 10, y: 10 });
+
+    let cool_position_component = cool_game.get_component::<Position>().unwrap();
+
+    let position = cool_position_component.get(cool_player).unwrap();
+
+    dbg!(position);
 
     let player = game.create_entity();
     game.add_component::<Size>(player, Size { size: 20 });
