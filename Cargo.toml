@@ -1,0 +1,16 @@
+[package]
+name = "oxygin"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anymap = "0.12.1"
+eyre = "0.6.12"
+rand = "0.8.5"
+sdl2 = "0.36.0"
+slotmap = "1.0.7"
+
+[dependencies.gl]
+git = "https://github.com/bjz/gl-rs"
