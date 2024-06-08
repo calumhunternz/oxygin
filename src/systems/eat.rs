@@ -1,6 +1,10 @@
 use rand::Rng;
 
-use crate::{Edible, Entity, InputState, Position, Size, ECS};
+use crate::{
+    components::{Edible, InputState, Position, Size},
+    resources::Player,
+    Entity, ECS,
+};
 
 pub fn eat_system(game: &mut ECS) {
     let eaten_entities = get_eaten_entities(game);
@@ -17,16 +21,14 @@ pub fn eat_system(game: &mut ECS) {
 }
 
 fn grow(game: &mut ECS, entities: &Vec<Entity>) {
-    let input_component = game.get_component::<InputState>().unwrap();
+    let player = game.resources.get::<Player>().unwrap().inner();
     let edible_component = game.get_component::<Edible>().unwrap();
     let mut size_component = game.get_mut_component::<Size>().unwrap();
 
     for eaten in entities {
         let edible = edible_component.get(*eaten).unwrap();
-        for player in input_component.keys() {
-            let player_size = size_component.get_mut(player).unwrap();
-            player_size.size = player_size.size + edible.calories;
-        }
+        let player_size = size_component.get_mut(player).unwrap();
+        player_size.size = player_size.size + edible.calories;
     }
 }
 
@@ -40,26 +42,25 @@ fn set_edible_eaten(game: &mut ECS, entities: &Vec<Entity>) {
 }
 
 fn get_eaten_entities(game: &mut ECS) -> Vec<Entity> {
-    let input_component = game.get_component::<InputState>().unwrap();
+    let player = game.resources.get::<Player>().unwrap().inner();
     let position_component = game.get_component::<Position>().unwrap();
     let size_component = game.get_component::<Size>().unwrap();
     let edible_component = game.get_component::<Edible>().unwrap();
     let mut eaten_entities: Vec<Entity> = vec![];
 
-    for input in input_component.keys() {
-        let player_position = position_component.get(input).unwrap();
-        let player_size = size_component.get(input).unwrap();
-        for edible_key in edible_component.keys() {
-            let edible_position = position_component.get(edible_key).unwrap();
-            let edible_size = size_component.get(edible_key).unwrap();
-            if check_collision(
-                &player_position,
-                &player_size,
-                &edible_position,
-                &edible_size,
-            ) {
-                eaten_entities.push(edible_key);
-            }
+    let player_position = position_component.get(player).unwrap();
+    let player_size = size_component.get(player).unwrap();
+
+    for edible_key in edible_component.keys() {
+        let edible_position = position_component.get(edible_key).unwrap();
+        let edible_size = size_component.get(edible_key).unwrap();
+        if check_collision(
+            &player_position,
+            &player_size,
+            &edible_position,
+            &edible_size,
+        ) {
+            eaten_entities.push(edible_key);
         }
     }
 

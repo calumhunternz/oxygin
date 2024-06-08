@@ -1,6 +1,9 @@
 use sdl2::{rect::Rect, render::Canvas, video::Window};
 
-use crate::{ColorComponent, Position, Size, ECS};
+use crate::{
+    components::{ColorComponent, Position, Size},
+    ECS,
+};
 
 pub fn render_system(game: &ECS, canvas: &mut Canvas<Window>) {
     let position_component = game.get_component::<Position>().unwrap();
