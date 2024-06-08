@@ -1,11 +1,6 @@
-use std::{
-    borrow::Borrow,
-    cell::{Ref, RefMut},
-};
+use std::cell::{Ref, RefMut};
 
-use crate::{component, CoolComponentStorage, ResourceStorage};
-
-use super::{Component, ComponentStorage};
+use super::{Component, ComponentStorage, ResourceStorage};
 
 use slotmap::{DefaultKey, SecondaryMap, SlotMap};
 
@@ -95,14 +90,10 @@ impl ECS {
     where
         T: 'static + Component,
     {
-        // let component = self.get_mut_component::<T>()?;
         Some(RefMut::map(self.get_mut_component::<T>()?, |entity_map| {
             entity_map.get_mut(entity).unwrap()
         }))
     }
-
-    //
-    // pub fn query<Q>(&self, entity: Entity) -> Option<Q>
 
     pub fn query<T>(&self, entity: Entity) -> Option<Ref<'_, T>>
     where
@@ -111,66 +102,6 @@ impl ECS {
         Some(Ref::map(self.get_component::<T>()?, |entity_map| {
             entity_map.get(entity).unwrap()
         }))
-    }
-}
-
-pub struct ECS2<'a> {
-    pub components: CoolComponentStorage<'a>,
-    pub resources: ResourceStorage,
-    pub entity_allocator: EntityAllocator<Entity, ()>,
-}
-
-impl<'a> ECS2<'a> {
-    pub fn new() -> Self {
-        Self {
-            components: CoolComponentStorage::new(),
-            resources: ResourceStorage::new(),
-            entity_allocator: EntityAllocator::new(),
-        }
-    }
-
-    pub fn create_entity(&mut self) -> Entity {
-        self.entity_allocator.insert(())
-    }
-
-    pub fn register_component<T>(&mut self)
-    where
-        T: 'static + Component,
-    {
-        self.components.register::<T>();
-    }
-
-    pub fn get_component<T>(&self) -> Option<&EntityMap<Entity, T>>
-    where
-        T: 'static + Component,
-    {
-        self.components.get::<T>()
-    }
-
-    pub fn get_mut_component<T>(&mut self) -> Option<&mut EntityMap<Entity, T>>
-    where
-        T: 'static + Component,
-    {
-        self.components.get_mut::<T>()
-    }
-
-    pub fn add_component<T>(&mut self, entity: Entity, component: T)
-    where
-        T: 'static + Component,
-    {
-        self.components.insert_into_entity_map(entity, component);
-    }
-
-    pub fn add_resource<T: 'static>(&mut self, resource: T) {
-        self.resources.insert(resource)
-    }
-
-    pub fn get_resource<T: 'static>(&self) -> Option<&T> {
-        self.resources.get::<T>()
-    }
-
-    pub fn get_mut_resource<T: 'static>(&mut self) -> Option<&mut T> {
-        self.resources.get_mut::<T>()
     }
 }
 

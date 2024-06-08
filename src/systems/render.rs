@@ -2,7 +2,7 @@ use sdl2::{rect::Rect, render::Canvas, video::Window};
 
 use crate::{
     components::{ColorComponent, Position, Size},
-    ECS,
+    ecs::ECS,
 };
 
 pub fn render_system(game: &ECS, canvas: &mut Canvas<Window>) {

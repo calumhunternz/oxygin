@@ -1,7 +1,7 @@
 use rand::Rng;
 use sdl2::pixels::Color;
 
-use crate::Component;
+use crate::ecs::Component;
 
 pub struct Position {
     pub x: i32,

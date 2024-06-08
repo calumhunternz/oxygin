@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::Entity;
+use crate::ecs::Entity;
 
 #[derive(Clone)]
 pub struct Player(Entity);

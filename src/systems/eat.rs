@@ -1,9 +1,9 @@
 use rand::Rng;
 
 use crate::{
-    components::{Edible, InputState, Position, Size},
+    components::{Edible, Position, Size},
+    ecs::{Entity, ECS},
     resources::Player,
-    Entity, ECS,
 };
 
 pub fn eat_system(game: &mut ECS) {

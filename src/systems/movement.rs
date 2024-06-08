@@ -1,7 +1,7 @@
 use crate::{
     components::{InputState, Physics, Position},
+    ecs::ECS,
     resources::Player,
-    ECS,
 };
 
 pub fn move_system(game: &mut ECS) {
