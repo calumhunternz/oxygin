@@ -1,9 +1,9 @@
 extern crate sdl2;
 
-use oxygin::components::{ColorComponent, Edible, InputState, Physics, Position, Size};
+use oxygin::bundles::{FoodBundle, PlayerBundle};
 use oxygin::ecs::ECS;
 use oxygin::resources::Player;
-use oxygin::systems::{eat_system, handle_input_system, move_system, render_system};
+use oxygin::systems::{eat_system, handle_input_system, move_system, render_system, spawn_edible};
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::EventPump;
@@ -21,13 +21,14 @@ fn find_sdl_gl_driver() -> Option<u32> {
 // TO IMPROVE
 // I want to remove the call to get ref then get component DONE!!!!!
 // Have a way to get the player entity more easily DONE!!! through resource storage
-
-// investigate queries
+// Break structure project to seperate out engine DONE
+// Add components to entities (if only syntactically) previously skill issued but now done
+// Remove refcell from component storage (Skilled issued -> Now fookin done (with anymap)
 //
-// Add components to entities (if only syntactically) eg player.add_component<Position>(position)
 // maybe chainable (Im thinking plugins for this)
-// Break structure project to seperate out engine
 // Traces within the ECS rather than unwraps
+//
+// investigate queries previous attempt go skill issued
 // Investigate component / resource register
 // Investigate plugins
 //
@@ -54,60 +55,17 @@ fn main() {
         .unwrap();
 
     let mut game = ECS::new();
-    game.register_component::<Position>();
-    game.register_component::<Size>();
-    game.register_component::<InputState>();
-    game.register_component::<Physics>();
-    game.register_component::<ColorComponent>();
-    game.register_component::<Edible>();
 
-    let player = game.create_entity();
-    game.add_component(player, Size { size: 20 });
-    game.add_component(player, Position { x: 400, y: 400 });
-    game.add_component(player, InputState::new());
-    game.add_component(player, Physics { speed: 10 });
-    game.add_component(player, ColorComponent::new(255, 255, 255));
+    game.register_bundle::<FoodBundle>();
+    game.register_bundle::<PlayerBundle>();
 
+    let player = game.add_bundle(PlayerBundle::new(400, 400, 50)).unwrap();
     game.add_resource(Player::new(&player));
-
-    let food = game.create_entity();
-    game.add_component(food, Size { size: 10 });
-    game.add_component(food, Position::random());
-    game.add_component(food, ColorComponent::new(0, 255, 0));
-    game.add_component(
-        food,
-        Edible {
-            eaten: false,
-            calories: 10,
-        },
-    );
-
-    let yum_food = game.create_entity();
-    game.add_component(yum_food, Size { size: 10 });
-    game.add_component(yum_food, Position::random());
-    game.add_component(yum_food, ColorComponent::new(0, 0, 255));
-    game.add_component(
-        yum_food,
-        Edible {
-            eaten: false,
-            calories: 100,
-        },
-    );
-    let drink = game.create_entity();
-    game.add_component(drink, Size { size: 10 });
-    game.add_component(drink, Position::random());
-    game.add_component(drink, ColorComponent::new(255, 0, 0));
-    game.add_component(
-        drink,
-        Edible {
-            eaten: false,
-            calories: 50,
-        },
-    );
 
     canvas.set_draw_color(Color::RGB(0, 255, 255));
     canvas.clear();
     canvas.present();
+    let mut count: u32 = 0;
     let mut event_pump = sdl_context.event_pump().unwrap();
     loop {
         canvas.clear();
@@ -115,7 +73,10 @@ fn main() {
         handle_input_system(event_pump.keyboard_state(), &mut game);
 
         move_system(&mut game);
+
         eat_system(&mut game);
+
+        spawn_edible(&mut game, &mut count);
 
         render_system(&game, &mut canvas);
 

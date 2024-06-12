@@ -22,18 +22,21 @@ pub fn eat_system(game: &mut ECS) {
 
 fn grow(game: &mut ECS, entities: &Vec<Entity>) {
     let player = game.resources.get::<Player>().unwrap().inner();
-    let edible_component = game.get_component::<Edible>().unwrap();
-    let mut size_component = game.get_mut_component::<Size>().unwrap();
+    let calories = get_eaten_calories(game, entities);
+    let size_component = game.query_mut::<Size>(player).unwrap();
+    size_component.size = size_component.size + calories;
+}
 
-    for eaten in entities {
+fn get_eaten_calories(game: &ECS, entities: &Vec<Entity>) -> u32 {
+    let edible_component = game.get_component::<Edible>().unwrap();
+    entities.iter().fold(0, |a, eaten| {
         let edible = edible_component.get(*eaten).unwrap();
-        let player_size = size_component.get_mut(player).unwrap();
-        player_size.size = player_size.size + edible.calories;
-    }
+        a + edible.calories
+    })
 }
 
 fn set_edible_eaten(game: &mut ECS, entities: &Vec<Entity>) {
-    let mut edible_component = game.get_mut_component::<Edible>().unwrap();
+    let edible_component = game.get_mut_component::<Edible>().unwrap();
 
     entities.into_iter().for_each(|entity| {
         let edible = edible_component.get_mut(*entity).unwrap();
@@ -68,7 +71,7 @@ fn get_eaten_entities(game: &mut ECS) -> Vec<Entity> {
 }
 
 fn handle_eaten(game: &mut ECS, entities: &Vec<Entity>) {
-    let mut edible_component = game.get_mut_component::<Edible>().unwrap();
+    let edible_component = game.get_mut_component::<Edible>().unwrap();
 
     entities.into_iter().for_each(|edible| {
         let eaten_entity = edible_component.get_mut(*edible).unwrap();
@@ -77,7 +80,7 @@ fn handle_eaten(game: &mut ECS, entities: &Vec<Entity>) {
 }
 
 fn eat_edibles(game: &mut ECS, entities: &Vec<Entity>) {
-    let mut position_component = game.get_mut_component::<Position>().unwrap();
+    let position_component = game.get_mut_component::<Position>().unwrap();
 
     entities.into_iter().for_each(|entity| {
         let position = position_component.get_mut(*entity).unwrap();

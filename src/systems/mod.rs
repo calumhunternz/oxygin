@@ -6,3 +6,5 @@ pub mod movement;
 pub use movement::*;
 pub mod render;
 pub use render::*;
+pub mod spawn;
+pub use spawn::*;

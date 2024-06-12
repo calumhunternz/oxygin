@@ -1,3 +1,4 @@
+workspace = { members = ["bundle_derive"] }
 [package]
 name = "oxygin"
 version = "0.1.0"
@@ -7,10 +8,12 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+anymap = "0.12.1"
 eyre = "0.6.12"
 rand = "0.8.5"
 sdl2 = "0.36.0"
 slotmap = "1.0.7"
+bundle_derive = { path = "./bundle_derive" }
 
 [dependencies.gl]
 git = "https://github.com/bjz/gl-rs"

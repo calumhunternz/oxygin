@@ -1,65 +1,92 @@
-use std::{
-    any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
-    rc::Rc,
-};
+use std::marker::PhantomData;
 
-use super::{Entity, EntityMap};
+use anymap::AnyMap;
+use slotmap::{SecondaryMap, SlotMap};
+
+use super::Entity;
+
+pub type ComponentMap = AnyMap;
 
 pub trait Component {}
 
-pub struct ComponentStorage {
-    pub storage: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>>,
+pub type EntityAllocator<K, V> = SlotMap<K, V>;
+
+pub type EntityMap<K, V> = SecondaryMap<K, V>;
+
+pub struct ComponentStorage<'a> {
+    pub allocator: EntityAllocator<Entity, ()>,
+    pub components: ComponentMap,
+    _marker: PhantomData<&'a ()>,
 }
 
-impl ComponentStorage {
+impl<'a> ComponentStorage<'a> {
     pub fn new() -> Self {
         Self {
-            storage: HashMap::new(),
+            allocator: EntityAllocator::new(),
+            components: ComponentMap::new(),
+            _marker: PhantomData,
         }
     }
 
-    pub fn register<T: Component + 'static>(&mut self)
-    where
-        T: 'static + Component,
-    {
-        let component: EntityMap<Entity, T> = EntityMap::new();
-
-        self.storage.insert(
-            TypeId::of::<T>(),
-            Rc::new(RefCell::new(Box::new(component))),
-        );
+    pub fn create(&mut self) -> Entity {
+        self.allocator.insert(())
     }
 
-    pub fn insert_into_entity_map<T>(&self, entity: Entity, component: T)
+    pub fn register<T>(&mut self)
     where
-        T: 'static + Component,
+        T: Component + 'static,
     {
-        if let Some(mut entity_map) = self.get_mut::<T>() {
-            entity_map.insert(entity, component);
-        } else {
-            dbg!("poop");
+        let new_component: EntityMap<Entity, T> = EntityMap::new();
+        self.components.insert(new_component);
+    }
+
+    pub fn try_register<T>(&mut self)
+    where
+        T: Component + 'static,
+    {
+        if self.components.get::<EntityMap<Entity, T>>().is_none() {
+            self.register::<T>()
         }
     }
 
-    pub fn get<T>(&self) -> Option<Ref<'_, EntityMap<Entity, T>>>
+    pub fn get<T>(&self) -> Option<&EntityMap<Entity, T>>
     where
-        T: 'static + Component,
+        T: Component + 'static,
     {
-        let component_ref = self.storage.get(&TypeId::of::<T>())?;
-        Some(Ref::map(component_ref.borrow(), |component| {
-            component.downcast_ref::<EntityMap<Entity, T>>().unwrap()
-        }))
+        self.components.get::<EntityMap<Entity, T>>()
     }
 
-    pub fn get_mut<T>(&self) -> Option<RefMut<'_, EntityMap<Entity, T>>>
+    pub fn get_mut<T>(&mut self) -> Option<&mut EntityMap<Entity, T>>
     where
-        T: 'static + Component,
+        T: Component + 'static,
     {
-        let component_ref = self.storage.get(&TypeId::of::<T>())?;
-        Some(RefMut::map(component_ref.borrow_mut(), |component| {
-            component.downcast_mut::<EntityMap<Entity, T>>().unwrap()
-        }))
+        self.components.get_mut::<EntityMap<Entity, T>>()
+    }
+}
+
+pub trait ComponentStore {
+    type Item: Component;
+
+    fn get(&self, entity: Entity) -> Option<&Self::Item>;
+    fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Item>;
+    fn insert(&mut self, entity: Entity, component: Self::Item);
+}
+
+impl<T> ComponentStore for EntityMap<Entity, T>
+where
+    T: Component,
+{
+    type Item = T;
+
+    fn get(&self, entity: Entity) -> Option<&T> {
+        self.get(entity)
+    }
+
+    fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
+        self.get_mut(entity)
+    }
+
+    fn insert(&mut self, entity: Entity, component: T) {
+        self.insert(entity, component);
     }
 }
