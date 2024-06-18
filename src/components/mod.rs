@@ -1,9 +1,10 @@
+use nalgebra::Vector3;
 use rand::Rng;
 use sdl2::pixels::Color;
 
 use crate::ecs::Component;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
@@ -23,6 +24,34 @@ impl Position {
 
 impl Component for Position {}
 
+#[derive(Clone, Debug)]
+pub struct Velocity {
+    pub vx: i32,
+    pub vy: i32,
+}
+
+impl Velocity {
+    pub fn new(vx: i32, vy: i32) -> Self {
+        Self { vx, vy }
+    }
+}
+
+impl Component for Velocity {}
+
+#[derive(Clone)]
+pub struct Gravity {
+    pub gx: f32,
+    pub gy: f32,
+}
+
+impl Gravity {
+    pub fn new(gx: f32, gy: f32) -> Self {
+        Self { gx, gy }
+    }
+}
+
+impl Component for Gravity {}
+
 #[derive(Clone)]
 pub struct Size {
     pub size: u32,
@@ -36,7 +65,7 @@ impl Size {
 
 impl Component for Size {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InputState {
     pub up: bool,
     pub right: bool,
@@ -87,3 +116,20 @@ pub struct Edible {
 }
 
 impl Component for Edible {}
+
+#[derive(Clone, Debug)]
+pub struct Render {
+    pub transform: Vector3<f32>,
+    pub scale: Vector3<f32>,
+}
+
+impl Render {
+    pub fn new(x: f32, y: f32, z: f32, scale: f32) -> Self {
+        Self {
+            transform: Vector3::new(x, y, z),
+            scale: Vector3::new(scale, scale, 1.0),
+        }
+    }
+}
+
+impl Component for Render {}

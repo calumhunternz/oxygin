@@ -1,0 +1,3 @@
+trait System {
+    fn update();
+}
