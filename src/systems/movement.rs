@@ -5,24 +5,24 @@ use crate::{
 };
 
 pub fn move_system(game: &mut ECS) {
-    let player = game.resources.get::<Player>().unwrap().inner();
-    let (input, speedd) = gather_data(player, game);
+    let player = game.resources.get::<Player>().unwrap().into();
+    let (input, speed) = gather_data(player, game);
     let position_component = game.get_mut_component::<Render>().unwrap();
 
-    let speed = 0.050;
+    // let speed = 0.050;
 
     if let Some(player) = position_component.get_mut(player) {
         if input.up {
-            player.transform.y = player.transform.y + speed;
+            player.transform.y = player.transform.y + speed.speed;
         }
         if input.right {
-            player.transform.x = player.transform.x + speed;
+            player.transform.x = player.transform.x + speed.speed;
         }
         if input.down {
-            player.transform.y = player.transform.y - speed;
+            player.transform.y = player.transform.y - speed.speed;
         }
         if input.left {
-            player.transform.x = player.transform.x - speed;
+            player.transform.x = player.transform.x - speed.speed;
         }
     }
 }

@@ -29,7 +29,7 @@ impl PlayerBundle {
             size: Size::new(size),
             input: InputState::new(),
             color: ColorComponent::new(255, 255, 255),
-            physics: Physics { speed: 10 },
+            physics: Physics { speed: 0.05 },
             velocity: Velocity { vx: 0, vy: 0 },
             grav: Gravity {
                 gx: 0.0,

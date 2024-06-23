@@ -1,8 +1,8 @@
-use nalgebra::Vector3;
+use nalgebra::{Matrix4, Vector3};
 use rand::Rng;
 use sdl2::pixels::Color;
 
-use crate::ecs::Component;
+use crate::{ecs::Component, render::InstanceRaw};
 
 #[derive(Clone, Debug)]
 pub struct Position {
@@ -90,7 +90,7 @@ impl InputState {
 
 #[derive(Clone)]
 pub struct Physics {
-    pub speed: i32,
+    pub speed: f32,
 }
 
 impl Component for Physics {}
@@ -128,6 +128,14 @@ impl Render {
         Self {
             transform: Vector3::new(x, y, z),
             scale: Vector3::new(scale, scale, 1.0),
+        }
+    }
+
+    pub fn to_raw(&self) -> InstanceRaw {
+        let transform = Matrix4::new_translation(&self.transform);
+        let scale = Matrix4::new_nonuniform_scaling(&self.scale);
+        InstanceRaw {
+            model: (transform * scale).into(),
         }
     }
 }

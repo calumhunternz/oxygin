@@ -1,28 +1,18 @@
-use std::ops::Deref;
-
 use crate::ecs::Entity;
 
-#[derive(Clone)]
 pub struct Player(Entity);
 
 impl Player {
     pub fn new(entity: &Entity) -> Self {
-        Self(entity.clone())
+        Self(*entity)
     }
-    pub fn inner(&self) -> Entity {
-        self.clone().into()
-    }
-}
 
-impl Deref for Player {
-    type Target = Entity;
-
-    fn deref(&self) -> &Self::Target {
+    pub fn as_ref(&self) -> &Entity {
         &self.0
     }
 }
 
-impl Into<Entity> for Player {
+impl Into<Entity> for &Player {
     fn into(self) -> Entity {
         self.0
     }

@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use wgpu::{
     util::DeviceExt, Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
     DeviceDescriptor, Features, InstanceDescriptor, PipelineCompilationOptions, Queue, RenderPass,
@@ -7,7 +9,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{components::Render, ecs::ECS};
 
-use super::{Instance, InstanceRaw, Uniforms, Vertex, INDICES, VERTICES};
+use super::{InstanceRaw, Uniforms, Vertex, INDICES, VERTICES};
 
 pub struct RenderState<'a> {
     pub surface: wgpu::Surface<'a>,
@@ -83,11 +85,6 @@ impl<'a> RenderState<'a> {
     }
 
     pub fn render(&mut self, game: &ECS) -> Result<(), wgpu::SurfaceError> {
-        let vertex_buffer = self.create_vertex_buffer(game);
-        let index_buffer = self.create_index_buffer(game);
-        let instances = self.get_instance_data(game);
-        let instance_buffer = self.create_instance_buffer(&instances);
-
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -97,16 +94,59 @@ impl<'a> RenderState<'a> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+        let mut vert_buffs = Vec::new();
+        let mut x_buffs = Vec::new();
+        let mut instance_buffs = Vec::new();
+        let mut instance_lens = Vec::new();
+
+        // TODO: Create and store vertex/index buffer on asset register
+        // TODO: Add instance cacheing -> Store instance buffer -> on update check for change (per
+        // instance) if there is a change update instance rebuild buffer, otherwise use exisiting
+        // TODO: Potential improvement combine vertex buffers with offsets so one buffer is re-used
+        // for all vertex's
+        for renderable in game.assets.assets.iter() {
+            let vert_buff = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&renderable.model.vertices),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                });
+            let x_buff = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Index Buffer"),
+                    contents: bytemuck::cast_slice(&renderable.model.indicies),
+                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                });
+
+            let instances = self.get_instance_data(game, &renderable.id);
+
+            let inst_buff = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&instances),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                });
+            vert_buffs.push(vert_buff);
+            x_buffs.push(x_buff);
+            instance_buffs.push(inst_buff);
+            instance_lens.push(instances.len());
+        }
+
         let mut render_pass = self.create_render_pass(&view, &mut encoder)?;
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..self.num_indices, 0, 0..instances.len() as _);
-        drop(render_pass);
 
+        for i in 0..vert_buffs.len() {
+            render_pass.set_vertex_buffer(0, vert_buffs[i].slice(..));
+            render_pass.set_index_buffer(x_buffs[i].slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(1, instance_buffs[i].slice(..));
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..instance_lens[i] as _);
+        }
+
+        drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
@@ -139,18 +179,15 @@ impl<'a> RenderState<'a> {
         }))
     }
 
-    fn get_instance_data(&self, ecs: &ECS) -> Vec<InstanceRaw> {
-        let instances = ecs
-            .get_component::<Render>()
-            .unwrap()
+    fn get_instance_data(&self, ecs: &ECS, model: &TypeId) -> Vec<InstanceRaw> {
+        let instance = ecs.assets.instances.get(model).unwrap();
+        instance
             .iter()
-            .map(|(_key, val)| Instance {
-                position: val.transform,
-                scale: val.scale,
+            .map(|(entity, _instance_raw)| {
+                let instance_component = ecs.query::<Render>(*entity).unwrap();
+                instance_component.to_raw()
             })
-            .collect::<Vec<_>>();
-
-        instances.iter().map(Instance::to_raw).collect::<Vec<_>>()
+            .collect::<Vec<_>>()
     }
 
     fn create_uniform_bind_group(device: &Device, buffer: &Buffer) -> (BindGroup, BindGroupLayout) {
@@ -188,32 +225,32 @@ impl<'a> RenderState<'a> {
         })
     }
 
-    fn create_instance_buffer(&self, instances: &Vec<InstanceRaw>) -> Buffer {
-        self.device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(instances),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            })
-    }
+    // fn create_instance_buffer(&self, instances: &Vec<InstanceRaw>) -> Buffer {
+    //     self.device
+    //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //             label: Some("Instance Buffer"),
+    //             contents: bytemuck::cast_slice(instances),
+    //             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    //         })
+    // }
 
-    fn create_vertex_buffer(&self, ecs: &ECS) -> Buffer {
-        self.device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&ecs.vertices),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            })
-    }
+    // fn create_vertex_buffer(&self, ecs: &ECS) -> Buffer {
+    //     self.device
+    //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //             label: Some("Vertex Buffer"),
+    //             contents: bytemuck::cast_slice(&ecs.vertices),
+    //             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    //         })
+    // }
 
-    fn create_index_buffer(&self, ecs: &ECS) -> Buffer {
-        self.device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(ecs.indices),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            })
-    }
+    // fn create_index_buffer(&self, ecs: &ECS) -> Buffer {
+    //     self.device
+    //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    //             label: Some("Index Buffer"),
+    //             contents: bytemuck::cast_slice(ecs.indices),
+    //             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+    //         })
+    // }
 
     fn create_render_pipeline(
         device: &Device,
@@ -232,9 +269,9 @@ impl<'a> RenderState<'a> {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main", // 1.
+                entry_point: "vs_main",
                 buffers: &[Vertex::desc(), InstanceRaw::desc()],
-                compilation_options: PipelineCompilationOptions::default(), // 2.
+                compilation_options: PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
@@ -248,9 +285,9 @@ impl<'a> RenderState<'a> {
                 compilation_options: PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, // 1.
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, // 2.
+                front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
                 // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 polygon_mode: wgpu::PolygonMode::Fill,
@@ -259,13 +296,13 @@ impl<'a> RenderState<'a> {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None, // 1.
+            depth_stencil: None,
             multisample: wgpu::MultisampleState {
-                count: 1,                         // 2.
-                mask: !0,                         // 3.
-                alpha_to_coverage_enabled: false, // 4.
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
             },
-            multiview: None, // 5.
+            multiview: None,
         })
     }
 
@@ -293,7 +330,7 @@ impl<'a> RenderState<'a> {
                     required_limits: wgpu::Limits::default(),
                     label: None,
                 },
-                None, // Trace path
+                None,
             )
             .await
             .unwrap()

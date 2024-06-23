@@ -35,10 +35,11 @@ impl Uniforms {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct InstanceRaw {
-    model: [[f32; 4]; 4],
+    pub model: [[f32; 4]; 4],
 }
+
 impl InstanceRaw {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;

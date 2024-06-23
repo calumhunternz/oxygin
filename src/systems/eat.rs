@@ -21,7 +21,7 @@ pub fn eat_system(game: &mut ECS) {
 }
 
 fn grow(game: &mut ECS, entities: &Vec<Entity>) {
-    let player = game.resources.get::<Player>().unwrap().inner();
+    let player = game.resources.get::<Player>().unwrap().into();
     let calories = get_eaten_calories(game, entities);
     let size_component = game.query_mut::<Size>(player).unwrap();
     size_component.size = size_component.size + calories;
@@ -45,7 +45,7 @@ fn set_edible_eaten(game: &mut ECS, entities: &Vec<Entity>) {
 }
 
 fn get_eaten_entities(game: &mut ECS) -> Vec<Entity> {
-    let player = game.resources.get::<Player>().unwrap().inner();
+    let player = game.resources.get::<Player>().unwrap().into();
     let position_component = game.get_component::<Position>().unwrap();
     let size_component = game.get_component::<Size>().unwrap();
     let edible_component = game.get_component::<Edible>().unwrap();

@@ -1,10 +1,14 @@
-use crate::{bundles::FoodBundle, components::InputState, ecs::ECS, resources::Player};
+use crate::{
+    bundles::FoodBundle, components::InputState, ecs::ECS, render::asset_manager::Food,
+    resources::Player,
+};
 
 pub fn spawn_edible(game: &mut ECS) {
-    let player = game.resources.get::<Player>().unwrap().inner();
+    let player = game.resources.get::<Player>().unwrap().into();
     let input = game.query_mut::<InputState>(player).unwrap();
 
     if input.space {
-        game.add_bundle(FoodBundle::new()).unwrap();
+        let food = game.add_bundle(FoodBundle::new()).unwrap();
+        game.add_asset::<Food>(food)
     }
 }

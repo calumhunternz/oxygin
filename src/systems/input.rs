@@ -8,7 +8,7 @@ use winit::{
 use crate::{components::InputState, ecs::ECS, resources::Player};
 
 pub fn handle_input_system(event: &KeyEvent, game: &mut ECS) {
-    let player = game.resources.get::<Player>().unwrap().inner();
+    let player = game.resources.get::<Player>().unwrap().into();
     let input_component = game.get_mut_component::<InputState>().unwrap();
 
     let input = input_component.get_mut(player).unwrap();

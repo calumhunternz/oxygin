@@ -4,8 +4,6 @@ pub mod input;
 pub use input::*;
 pub mod movement;
 pub use movement::*;
-pub mod render;
-pub use render::*;
 pub mod gravity;
 pub mod spawn;
 pub use gravity::*;

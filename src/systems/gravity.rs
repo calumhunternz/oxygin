@@ -1,7 +1,6 @@
 use crate::{
     components::{Gravity, Position, Velocity},
     ecs::{Entity, ECS},
-    resources::Player,
 };
 
 pub fn gravity(game: &mut ECS) {
@@ -11,7 +10,7 @@ pub fn gravity(game: &mut ECS) {
 }
 
 fn update_position(game: &mut ECS) {
-    let player = game.resources.get::<Player>().unwrap().inner();
+    // let player: Entity = game.resources.get::<Player>().unwrap().into();
     let affected = get_vel(game);
     let position = game.get_mut_component::<Position>().unwrap();
     let dt = 2;

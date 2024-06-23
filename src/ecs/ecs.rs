@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use crate::render::{Instance, Vertex};
+use crate::render::asset_manager::{AssetManager, Model};
 
 use super::{Bundle, Bundles, Component, ComponentStorage, EntityMap, ResourceStorage};
 
@@ -12,9 +12,7 @@ pub struct ECS<'a> {
     pub store: ComponentStorage<'a>,
     pub resources: ResourceStorage,
     pub bundles: Bundles,
-    pub vertices: &'a [Vertex],
-    pub instances: Vec<Instance>,
-    pub indices: &'a [u16],
+    pub assets: AssetManager,
 }
 
 impl<'a> ECS<'a> {
@@ -23,30 +21,7 @@ impl<'a> ECS<'a> {
             store: ComponentStorage::new(),
             resources: ResourceStorage::new(),
             bundles: Bundles::new(),
-            vertices: &[
-                Vertex {
-                    // Index 0
-                    position: [-1.0, 1.0, 0.0],
-                    color: [1.0, 0.0, 0.0],
-                },
-                Vertex {
-                    // Index 1
-                    position: [-1.0, -1.0, 0.0],
-                    color: [0.0, 1.0, 0.0],
-                },
-                Vertex {
-                    // Index 2
-                    position: [1.0, 1.0, 0.0],
-                    color: [0.0, 0.0, 1.0],
-                },
-                Vertex {
-                    // Index 3
-                    position: [1.0, -1.0, 0.0],
-                    color: [1.0, 0.0, 0.0],
-                },
-            ],
-            instances: vec![],
-            indices: &[0, 1, 2, 3, 2, 1],
+            assets: AssetManager::new(),
         }
     }
 
@@ -123,6 +98,20 @@ impl<'a> ECS<'a> {
         T: Bundle + 'static,
     {
         bundle.add_data(&mut self.store, &self.bundles)
+    }
+
+    pub fn register_asset<T>(&mut self, model: T)
+    where
+        T: Into<Model> + 'static,
+    {
+        self.assets.register(model);
+    }
+
+    pub fn add_asset<T>(&mut self, entity: Entity)
+    where
+        T: Into<Model> + 'static,
+    {
+        self.assets.add_asset::<T>(entity);
     }
 }
 
