@@ -67,7 +67,8 @@ impl<'a> App<'a> {
         let event_loop = EventLoop::new().unwrap();
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
-        let mut state = RenderState::new(&window);
+
+        let mut state = RenderState::new(&window, &mut self.ecs);
 
         event_loop
             .run(move |event, control_flow| match event {
@@ -90,7 +91,7 @@ impl<'a> App<'a> {
 
                         self.update();
 
-                        match state.render(&self.ecs) {
+                        match state.render(&mut self.ecs) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                                 state.resize(state.size)

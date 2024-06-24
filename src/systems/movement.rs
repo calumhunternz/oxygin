@@ -1,6 +1,7 @@
 use crate::{
     components::{InputState, Physics, Render},
     ecs::{Entity, ECS},
+    render::asset_manager::Square,
     resources::Player,
 };
 
@@ -10,20 +11,29 @@ pub fn move_system(game: &mut ECS) {
     let position_component = game.get_mut_component::<Render>().unwrap();
 
     // let speed = 0.050;
+    let mut moved = false;
 
     if let Some(player) = position_component.get_mut(player) {
         if input.up {
             player.transform.y = player.transform.y + speed.speed;
+            moved = true;
         }
         if input.right {
             player.transform.x = player.transform.x + speed.speed;
+            moved = true;
         }
         if input.down {
             player.transform.y = player.transform.y - speed.speed;
+            moved = true;
         }
         if input.left {
             player.transform.x = player.transform.x - speed.speed;
+            moved = true;
         }
+    }
+
+    if moved {
+        game.assets.mark_instance_change::<Square>(player);
     }
 }
 

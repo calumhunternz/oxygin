@@ -28,9 +28,42 @@ pub struct Model {
     pub indicies: Vec<u16>,
 }
 
+pub struct ReCalculate(bool);
+
+impl ReCalculate {
+    pub fn new() -> Self {
+        Self(true)
+    }
+    pub fn inner(&self) -> &bool {
+        &self.0
+    }
+    pub fn moved(&mut self) {
+        self.0 = true;
+    }
+    pub fn finish(&mut self) {
+        self.0 = false;
+    }
+}
+
+pub struct InstanceContainer {
+    pub instances: Vec<InstanceRaw>,
+    pub entity: Vec<Entity>,
+    pub re_calculate: Vec<ReCalculate>,
+}
+
+impl InstanceContainer {
+    pub fn new() -> Self {
+        Self {
+            instances: Vec::new(),
+            entity: Vec::new(),
+            re_calculate: Vec::new(),
+        }
+    }
+}
+
 pub struct AssetManager {
     pub assets: Vec<Renderable>,
-    pub instances: HashMap<TypeId, Vec<(Entity, InstanceRaw)>>,
+    pub instances: HashMap<TypeId, InstanceContainer>,
 }
 
 impl AssetManager {
@@ -46,7 +79,8 @@ impl AssetManager {
         T: Into<Model> + 'static,
     {
         self.assets.push(Renderable::new::<T>(model));
-        self.instances.insert(TypeId::of::<T>(), Vec::new());
+        self.instances
+            .insert(TypeId::of::<T>(), InstanceContainer::new());
     }
 
     pub fn add_asset<T>(&mut self, entity: Entity)
@@ -54,7 +88,21 @@ impl AssetManager {
         T: Into<Model> + 'static,
     {
         let instance = self.instances.get_mut(&TypeId::of::<T>()).unwrap();
-        instance.push((entity, InstanceRaw::default()));
+        instance.instances.push(InstanceRaw::default());
+        instance.re_calculate.push(ReCalculate::new());
+        instance.entity.push(entity);
+    }
+
+    pub fn mark_instance_change<T>(&mut self, entity: Entity)
+    where
+        T: Into<Model> + 'static,
+    {
+        let instance = self.instances.get_mut(&TypeId::of::<T>()).unwrap();
+        for i in 0..instance.entity.len() {
+            if instance.entity[i] == entity {
+                instance.re_calculate[i].moved();
+            }
+        }
     }
 }
 

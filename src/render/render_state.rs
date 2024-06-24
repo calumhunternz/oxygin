@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, collections::HashMap};
 
 use wgpu::{
     util::DeviceExt, Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
@@ -11,6 +11,22 @@ use crate::{components::Render, ecs::ECS};
 
 use super::{InstanceRaw, Uniforms, Vertex, INDICES, VERTICES};
 
+pub struct ModelBuffer {
+    vertex: Buffer,
+    index: Buffer,
+    instance: Buffer,
+}
+
+impl ModelBuffer {
+    pub fn new(vertex: Buffer, index: Buffer, instance: Buffer) -> Self {
+        Self {
+            vertex,
+            index,
+            instance,
+        }
+    }
+}
+
 pub struct RenderState<'a> {
     pub surface: wgpu::Surface<'a>,
     pub device: wgpu::Device,
@@ -19,6 +35,7 @@ pub struct RenderState<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub window: &'a Window,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub model_buffers: HashMap<TypeId, ModelBuffer>,
     pub vertex_buffer: Option<wgpu::Buffer>,
     pub index_buffer: Option<wgpu::Buffer>,
     pub num_vertices: u32,
@@ -29,7 +46,7 @@ pub struct RenderState<'a> {
     pub uniform_bind_group: wgpu::BindGroup,
 }
 impl<'a> RenderState<'a> {
-    pub fn new(window: &'a Window) -> RenderState<'a> {
+    pub fn new(window: &'a Window, ecs: &mut ECS) -> RenderState<'a> {
         let size = window.inner_size();
         let instance = Self::get_wgpu_instance();
         let surface = instance.create_surface(window).unwrap();
@@ -46,6 +63,8 @@ impl<'a> RenderState<'a> {
         let render_pipeline =
             Self::create_render_pipeline(&device, &uniform_bind_group_layout, &shader, &config);
 
+        let model_buffers = Self::create_model_buffers(&device, &ecs);
+
         Self {
             window,
             surface,
@@ -55,6 +74,7 @@ impl<'a> RenderState<'a> {
             size,
             render_pipeline,
             vertex_buffer: None,
+            model_buffers,
             num_vertices,
             num_indices,
             index_buffer: None,
@@ -84,7 +104,7 @@ impl<'a> RenderState<'a> {
         }
     }
 
-    pub fn render(&mut self, game: &ECS) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, game: &mut ECS) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -94,43 +114,58 @@ impl<'a> RenderState<'a> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-        let mut vert_buffs = Vec::new();
-        let mut x_buffs = Vec::new();
+
+        // TODO: Create and store vertex/index buffer on asset register - Done
+        // TODO: Add instance cacheing -> Store instance buffer -> on update check for change (per
+        // instance) if there is a change update instance rebuild buffer, otherwise use exisiting
+        // TODO: Add extra length to instance buffer so that as more are added does not need to
+        // immediatly create new buffer
+        // TODO: Potential improvement combine vertex buffers with offsets so one buffer is re-used
+        // for all vertex's
+        //
+        // Stopping point for renderer
+        // Buffer re-use
+        // Instance buffer padding
+        // instance cacheing
+        // Added sprites to vectors
+        //
+        // After the above add entity removal so ring buffer can be implemented
+        //
+        // would like to do this but this will need to come after entity removal is implemented
+        // would have to co-inside with a max component num feature because as instances are
+        // overridden the entity will live on in the ecs
+        // Overwrite first instance when buffer padding is filled (instance buffer ring method)
+
+        let mut model_buffs = Vec::new();
         let mut instance_buffs = Vec::new();
         let mut instance_lens = Vec::new();
 
-        // TODO: Create and store vertex/index buffer on asset register
-        // TODO: Add instance cacheing -> Store instance buffer -> on update check for change (per
-        // instance) if there is a change update instance rebuild buffer, otherwise use exisiting
-        // TODO: Potential improvement combine vertex buffers with offsets so one buffer is re-used
-        // for all vertex's
-        for renderable in game.assets.assets.iter() {
-            let vert_buff = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    contents: bytemuck::cast_slice(&renderable.model.vertices),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                });
-            let x_buff = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Index Buffer"),
-                    contents: bytemuck::cast_slice(&renderable.model.indicies),
-                    usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                });
+        self.update_instance_data(game);
 
+        for renderable in game.assets.assets.iter() {
+            let model_buff = self.model_buffers.get(&renderable.id).unwrap();
+
+            // Loop through
+            // currently each instance of renderable has a list of
             let instances = self.get_instance_data(game, &renderable.id);
 
+            // TODO: Use staging buffer to copy into instance buffer
+
+            dbg!(self.device.limits().max_buffer_size);
+            // let inst_buff = self.device.create_buffer(&wgpu::BufferDescriptor {
+            //     label: Some("Instance Buffer"),
+            //     size: ,
+            //     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            //     mapped_at_creation: false,
+            // });
             let inst_buff = self
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Instance Buffer"),
-                    contents: bytemuck::cast_slice(&instances),
+                    contents: bytemuck::cast_slice(instances),
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });
-            vert_buffs.push(vert_buff);
-            x_buffs.push(x_buff);
+            model_buffs.push(model_buff);
             instance_buffs.push(inst_buff);
             instance_lens.push(instances.len());
         }
@@ -139,9 +174,9 @@ impl<'a> RenderState<'a> {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
-        for i in 0..vert_buffs.len() {
-            render_pass.set_vertex_buffer(0, vert_buffs[i].slice(..));
-            render_pass.set_index_buffer(x_buffs[i].slice(..), wgpu::IndexFormat::Uint16);
+        for i in 0..model_buffs.len() {
+            render_pass.set_vertex_buffer(0, model_buffs[i].vertex.slice(..));
+            render_pass.set_index_buffer(model_buffs[i].index.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.set_vertex_buffer(1, instance_buffs[i].slice(..));
             render_pass.draw_indexed(0..self.num_indices, 0, 0..instance_lens[i] as _);
         }
@@ -179,15 +214,66 @@ impl<'a> RenderState<'a> {
         }))
     }
 
-    fn get_instance_data(&self, ecs: &ECS, model: &TypeId) -> Vec<InstanceRaw> {
-        let instance = ecs.assets.instances.get(model).unwrap();
-        instance
+    fn update_instance_data(&self, ecs: &mut ECS) {
+        let model_ids = ecs
+            .assets
+            .assets
             .iter()
-            .map(|(entity, _instance_raw)| {
-                let instance_component = ecs.query::<Render>(*entity).unwrap();
-                instance_component.to_raw()
-            })
-            .collect::<Vec<_>>()
+            .map(|x| x.id.clone())
+            .collect::<Vec<_>>();
+
+        // gets every model and checks if it needs to be recalculated
+        // if it does get the render from ecs re-calculate to_raw and then update the instance raw
+        // in renderable instances
+        for model in model_ids {
+            let instance = ecs.assets.instances.get(&model).unwrap();
+            let mut re_calculated_instances = Vec::new();
+            for i in 0..instance.instances.len() {
+                if *instance.re_calculate[i].inner() {
+                    let instance_component = ecs.query::<Render>(instance.entity[i]).unwrap();
+                    re_calculated_instances.push((i, instance_component.to_raw()));
+                }
+            }
+
+            let instance = ecs.assets.instances.get_mut(&model).unwrap();
+            for (i, raw) in re_calculated_instances {
+                dbg!(&i);
+                instance.instances[i] = raw;
+                instance.re_calculate[i].finish();
+            }
+        }
+    }
+
+    fn get_instance_data(&self, ecs: &'a ECS, model: &TypeId) -> &'a Vec<InstanceRaw> {
+        &ecs.assets.instances.get(model).unwrap().instances
+    }
+
+    fn create_model_buffers(device: &Device, ecs: &ECS) -> HashMap<TypeId, ModelBuffer> {
+        let mut buffers = HashMap::new();
+
+        for renderable in ecs.assets.assets.iter() {
+            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&renderable.model.vertices),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&renderable.model.indicies),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            });
+            let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Instance Buffer"),
+                size: (std::mem::size_of::<InstanceRaw>() * 5) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            buffers.insert(
+                renderable.id,
+                ModelBuffer::new(vertex_buffer, index_buffer, instance_buffer),
+            );
+        }
+        buffers
     }
 
     fn create_uniform_bind_group(device: &Device, buffer: &Buffer) -> (BindGroup, BindGroupLayout) {

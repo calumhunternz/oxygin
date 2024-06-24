@@ -138,6 +138,9 @@ impl Render {
             model: (transform * scale).into(),
         }
     }
+
+    // TODO: Add functions so that whenever this is updated change the corrosponding renderable
+    // instance to re-calculate
 }
 
 impl Component for Render {}
