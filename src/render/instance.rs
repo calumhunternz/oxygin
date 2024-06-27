@@ -70,4 +70,8 @@ impl InstanceRaw {
             ],
         }
     }
+
+    pub fn size() -> usize {
+        std::mem::size_of::<Self>()
+    }
 }

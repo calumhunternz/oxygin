@@ -4,9 +4,7 @@ use bundle_derive::Bundle;
 use rand::Rng;
 
 use crate::{
-    components::{
-        ColorComponent, Edible, Gravity, InputState, Physics, Position, Render, Size, Velocity,
-    },
+    components::{Edible, Gravity, InputState, Physics, Position, Render, Size, Velocity},
     ecs::{Bundle, Bundles, ComponentStorage, Entity},
 };
 
@@ -15,7 +13,6 @@ pub struct PlayerBundle {
     pub position: Position,
     pub size: Size,
     pub input: InputState,
-    pub color: ColorComponent,
     pub physics: Physics,
     pub velocity: Velocity,
     pub grav: Gravity,
@@ -28,7 +25,6 @@ impl PlayerBundle {
             position: Position::new(x, y),
             size: Size::new(size),
             input: InputState::new(),
-            color: ColorComponent::new(255, 255, 255),
             physics: Physics { speed: 0.05 },
             velocity: Velocity { vx: 0, vy: 0 },
             grav: Gravity {
@@ -44,7 +40,6 @@ impl PlayerBundle {
 pub struct FoodBundle {
     pub size: Size,
     pub position: Position,
-    pub color: ColorComponent,
     pub edible: Edible,
     pub velocity: Velocity,
     pub grav: Gravity,
@@ -59,7 +54,6 @@ impl FoodBundle {
         Self {
             size: Size { size: 10 },
             position: Position::random(),
-            color: ColorComponent::new(0, 255, 0),
             edible: Edible {
                 eaten: false,
                 calories: 10,

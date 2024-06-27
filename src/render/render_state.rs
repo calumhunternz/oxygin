@@ -1,7 +1,8 @@
-use std::{any::TypeId, collections::HashMap};
+use std::{any::TypeId, collections::HashMap, num::NonZeroU64};
 
 use wgpu::{
-    util::DeviceExt, Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
+    util::{DeviceExt, StagingBelt},
+    Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
     DeviceDescriptor, Features, InstanceDescriptor, PipelineCompilationOptions, Queue, RenderPass,
     RequestAdapterOptions, ShaderModule, Surface, SurfaceCapabilities, SurfaceConfiguration,
 };
@@ -15,27 +16,31 @@ pub struct ModelBuffer {
     vertex: Buffer,
     index: Buffer,
     instance: Buffer,
+    capacity: usize,
 }
 
 impl ModelBuffer {
-    pub fn new(vertex: Buffer, index: Buffer, instance: Buffer) -> Self {
+    pub fn new(vertex: Buffer, index: Buffer, instance: Buffer, capacity: usize) -> Self {
         Self {
             vertex,
             index,
             instance,
+            capacity,
         }
     }
 }
 
-pub struct RenderState<'a> {
-    pub surface: wgpu::Surface<'a>,
+pub struct RenderState<'render> {
+    pub surface: wgpu::Surface<'render>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    pub window: &'a Window,
+    pub window: &'render Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub model_buffers: HashMap<TypeId, ModelBuffer>,
+    pub staging_belt: StagingBelt,
+    pub staging_capacity: usize,
     pub vertex_buffer: Option<wgpu::Buffer>,
     pub index_buffer: Option<wgpu::Buffer>,
     pub num_vertices: u32,
@@ -45,8 +50,8 @@ pub struct RenderState<'a> {
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
 }
-impl<'a> RenderState<'a> {
-    pub fn new(window: &'a Window, ecs: &mut ECS) -> RenderState<'a> {
+impl<'render> RenderState<'render> {
+    pub fn new(window: &'render Window, ecs: &mut ECS) -> RenderState<'render> {
         let size = window.inner_size();
         let instance = Self::get_wgpu_instance();
         let surface = instance.create_surface(window).unwrap();
@@ -62,8 +67,10 @@ impl<'a> RenderState<'a> {
             Self::create_uniform_bind_group(&device, &uniform_buffer);
         let render_pipeline =
             Self::create_render_pipeline(&device, &uniform_bind_group_layout, &shader, &config);
+        let staging_belt = StagingBelt::new((InstanceRaw::size() * 20) as u64);
 
-        let model_buffers = Self::create_model_buffers(&device, &ecs);
+        let staging_capacity = 20;
+        let model_buffers = Self::create_model_buffers(&device, &ecs, 10);
 
         Self {
             window,
@@ -75,6 +82,8 @@ impl<'a> RenderState<'a> {
             render_pipeline,
             vertex_buffer: None,
             model_buffers,
+            staging_belt,
+            staging_capacity,
             num_vertices,
             num_indices,
             index_buffer: None,
@@ -137,36 +146,25 @@ impl<'a> RenderState<'a> {
         // Overwrite first instance when buffer padding is filled (instance buffer ring method)
 
         let mut model_buffs = Vec::new();
-        let mut instance_buffs = Vec::new();
+        // let mut instance_buffs = Vec::new();
         let mut instance_lens = Vec::new();
 
         self.update_instance_data(game);
 
+        self.update_buffer_capacity(game);
+
         for renderable in game.assets.assets.iter() {
             let model_buff = self.model_buffers.get(&renderable.id).unwrap();
-
-            // Loop through
-            // currently each instance of renderable has a list of
             let instances = self.get_instance_data(game, &renderable.id);
+            Self::write_staging_buff(
+                instances,
+                &model_buff.instance,
+                &mut encoder,
+                &mut self.staging_belt,
+                &mut self.device,
+            );
 
-            // TODO: Use staging buffer to copy into instance buffer
-
-            dbg!(self.device.limits().max_buffer_size);
-            // let inst_buff = self.device.create_buffer(&wgpu::BufferDescriptor {
-            //     label: Some("Instance Buffer"),
-            //     size: ,
-            //     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            //     mapped_at_creation: false,
-            // });
-            let inst_buff = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Instance Buffer"),
-                    contents: bytemuck::cast_slice(instances),
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                });
             model_buffs.push(model_buff);
-            instance_buffs.push(inst_buff);
             instance_lens.push(instances.len());
         }
 
@@ -177,15 +175,76 @@ impl<'a> RenderState<'a> {
         for i in 0..model_buffs.len() {
             render_pass.set_vertex_buffer(0, model_buffs[i].vertex.slice(..));
             render_pass.set_index_buffer(model_buffs[i].index.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.set_vertex_buffer(1, instance_buffs[i].slice(..));
+            render_pass.set_vertex_buffer(1, model_buffs[i].instance.slice(..));
             render_pass.draw_indexed(0..self.num_indices, 0, 0..instance_lens[i] as _);
         }
 
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
+        self.staging_belt.recall();
         output.present();
 
         Ok(())
+    }
+
+    fn update_buffer_capacity<'a>(&mut self, ecs: &'a ECS) {
+        for renderable in ecs.assets.assets.iter() {
+            let model_buff = self.model_buffers.get_mut(&renderable.id).unwrap();
+            let instances = Self::get_instance_data2(ecs, &renderable.id);
+            if model_buff.capacity <= instances.len() {
+                let new_capacity = model_buff.capacity * 2;
+                let new_instance_buffer =
+                    Self::create_bigger_instance_buffer(new_capacity, &self.device);
+                // new instance buf size is greater than staging belt size (re-create staging belt)
+                dbg!(&instances.len());
+                if instances.len() >= self.staging_capacity {
+                    dbg!("bigger belt");
+                    let new_staging_capacity = new_capacity * 2;
+                    let new_staging_belt = Self::create_bigger_staging_buffer(new_staging_capacity);
+                    self.staging_belt = new_staging_belt;
+                    self.staging_capacity = new_staging_capacity
+                }
+                dbg!(&self.staging_capacity);
+                dbg!(new_capacity);
+                dbg!("bigger buff");
+                model_buff.instance = new_instance_buffer;
+                model_buff.capacity = new_capacity;
+            }
+        }
+    }
+
+    fn create_bigger_instance_buffer(new_capacity: usize, device: &Device) -> Buffer {
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            size: (InstanceRaw::size() * new_capacity) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let new_buffer = instance_buffer;
+        new_buffer
+    }
+
+    fn create_bigger_staging_buffer(new_capacity: usize) -> StagingBelt {
+        let new_belt = StagingBelt::new((InstanceRaw::size() * new_capacity) as u64);
+        new_belt
+    }
+
+    fn write_staging_buff(
+        instance_data: &[InstanceRaw],
+        instance_buffer: &Buffer,
+        encoder: &mut CommandEncoder,
+        staging_belt: &mut StagingBelt,
+        device: &Device,
+    ) {
+        if let Some(data_size) = NonZeroU64::new((InstanceRaw::size() * instance_data.len()) as u64)
+        {
+            let mut staging_buffer_view =
+                staging_belt.write_buffer(encoder, instance_buffer, 0, data_size, device);
+            let data = bytemuck::cast_slice(instance_data);
+            staging_buffer_view.copy_from_slice(data);
+            drop(staging_buffer_view);
+            staging_belt.finish();
+        }
     }
 
     fn create_render_pass<'b>(
@@ -237,18 +296,25 @@ impl<'a> RenderState<'a> {
 
             let instance = ecs.assets.instances.get_mut(&model).unwrap();
             for (i, raw) in re_calculated_instances {
-                dbg!(&i);
                 instance.instances[i] = raw;
                 instance.re_calculate[i].finish();
             }
         }
     }
 
-    fn get_instance_data(&self, ecs: &'a ECS, model: &TypeId) -> &'a Vec<InstanceRaw> {
+    fn get_instance_data<'a>(&self, ecs: &'a ECS, model: &TypeId) -> &'a Vec<InstanceRaw> {
         &ecs.assets.instances.get(model).unwrap().instances
     }
 
-    fn create_model_buffers(device: &Device, ecs: &ECS) -> HashMap<TypeId, ModelBuffer> {
+    fn get_instance_data2<'a>(ecs: &'a ECS, model: &TypeId) -> &'a Vec<InstanceRaw> {
+        &ecs.assets.instances.get(model).unwrap().instances
+    }
+
+    fn create_model_buffers(
+        device: &Device,
+        ecs: &ECS,
+        capacity: usize,
+    ) -> HashMap<TypeId, ModelBuffer> {
         let mut buffers = HashMap::new();
 
         for renderable in ecs.assets.assets.iter() {
@@ -262,15 +328,16 @@ impl<'a> RenderState<'a> {
                 contents: bytemuck::cast_slice(&renderable.model.indicies),
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             });
+
             let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Instance Buffer"),
-                size: (std::mem::size_of::<InstanceRaw>() * 5) as u64,
+                size: (InstanceRaw::size() * capacity) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
             buffers.insert(
                 renderable.id,
-                ModelBuffer::new(vertex_buffer, index_buffer, instance_buffer),
+                ModelBuffer::new(vertex_buffer, index_buffer, instance_buffer, capacity),
             );
         }
         buffers

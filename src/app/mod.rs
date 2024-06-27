@@ -69,7 +69,6 @@ impl<'a> App<'a> {
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut state = RenderState::new(&window, &mut self.ecs);
-
         event_loop
             .run(move |event, control_flow| match event {
                 Event::WindowEvent {

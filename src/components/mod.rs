@@ -1,6 +1,5 @@
 use nalgebra::{Matrix4, Vector3};
 use rand::Rng;
-use sdl2::pixels::Color;
 
 use crate::{ecs::Component, render::InstanceRaw};
 
@@ -95,19 +94,19 @@ pub struct Physics {
 
 impl Component for Physics {}
 
-#[derive(Clone)]
-pub struct ColorComponent {
-    pub rgb: Color,
-}
-impl ColorComponent {
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Self {
-            rgb: Color::RGB(r, g, b),
-        }
-    }
-}
-
-impl Component for ColorComponent {}
+// #[derive(Clone)]
+// pub struct ColorComponent {
+//     pub rgb: Color,
+// }
+// impl ColorComponent {
+//     pub fn new(r: u8, g: u8, b: u8) -> Self {
+//         Self {
+//             rgb: Color::RGB(r, g, b),
+//         }
+//     }
+// }
+//
+// impl Component for ColorComponent {}
 
 #[derive(Clone)]
 pub struct Edible {
