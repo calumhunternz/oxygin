@@ -10,7 +10,10 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{components::Render, ecs::ECS};
 
-use super::{InstanceRaw, Uniforms, Vertex, INDICES, VERTICES};
+use super::{
+    asset_manager::{self, AssetManager},
+    InstanceRaw, Uniforms, Vertex, INDICES, VERTICES,
+};
 
 pub struct ModelBuffer {
     vertex: Buffer,
@@ -27,6 +30,16 @@ impl ModelBuffer {
             instance,
             capacity,
         }
+    }
+
+    pub fn increase_capacity(&mut self, new_capacity: usize, device: &Device) {
+        self.instance = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            size: (InstanceRaw::size() * new_capacity) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.capacity = new_capacity;
     }
 }
 
@@ -51,7 +64,7 @@ pub struct RenderState<'render> {
     pub uniform_bind_group: wgpu::BindGroup,
 }
 impl<'render> RenderState<'render> {
-    pub fn new(window: &'render Window, ecs: &mut ECS) -> RenderState<'render> {
+    pub fn new(window: &'render Window, asset_manager: &mut AssetManager) -> RenderState<'render> {
         let size = window.inner_size();
         let instance = Self::get_wgpu_instance();
         let surface = instance.create_surface(window).unwrap();
@@ -70,7 +83,7 @@ impl<'render> RenderState<'render> {
         let staging_belt = StagingBelt::new((InstanceRaw::size() * 20) as u64);
 
         let staging_capacity = 20;
-        let model_buffers = Self::create_model_buffers(&device, &ecs, 10);
+        let model_buffers = Self::create_model_buffers(&device, &asset_manager, 10);
 
         Self {
             window,
@@ -113,7 +126,16 @@ impl<'render> RenderState<'render> {
         }
     }
 
-    pub fn render(&mut self, game: &mut ECS) -> Result<(), wgpu::SurfaceError> {
+    // TODO: Potential improvement combine vertex buffers with offsets so one buffer is re-used
+    // for all vertex's
+    // TODO: Investigate using vec2 instead of vec 3 with a seperate float for depth
+    // TODO Investigate world space
+    //
+    pub fn render(
+        &mut self,
+        game: &mut ECS,
+        assets: &mut AssetManager,
+    ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -124,38 +146,16 @@ impl<'render> RenderState<'render> {
                 label: Some("Render Encoder"),
             });
 
-        // TODO: Create and store vertex/index buffer on asset register - Done
-        // TODO: Add instance cacheing -> Store instance buffer -> on update check for change (per
-        // instance) if there is a change update instance rebuild buffer, otherwise use exisiting
-        // TODO: Add extra length to instance buffer so that as more are added does not need to
-        // immediatly create new buffer
-        // TODO: Potential improvement combine vertex buffers with offsets so one buffer is re-used
-        // for all vertex's
-        //
-        // Stopping point for renderer
-        // Buffer re-use
-        // Instance buffer padding
-        // instance cacheing
-        // Added sprites to vectors
-        //
-        // After the above add entity removal so ring buffer can be implemented
-        //
-        // would like to do this but this will need to come after entity removal is implemented
-        // would have to co-inside with a max component num feature because as instances are
-        // overridden the entity will live on in the ecs
-        // Overwrite first instance when buffer padding is filled (instance buffer ring method)
+        self.update_instance_data(game, assets);
 
-        let mut model_buffs = Vec::new();
-        // let mut instance_buffs = Vec::new();
-        let mut instance_lens = Vec::new();
+        self.update_buffer_capacity(assets);
 
-        self.update_instance_data(game);
+        let mut model_buffs = Vec::with_capacity(assets.assets.len());
+        let mut instance_lens = Vec::with_capacity(assets.assets.len());
 
-        self.update_buffer_capacity(game);
-
-        for renderable in game.assets.assets.iter() {
+        for renderable in assets.assets.iter() {
             let model_buff = self.model_buffers.get(&renderable.id).unwrap();
-            let instances = self.get_instance_data(game, &renderable.id);
+            let instances = assets.get_instance_data(&renderable.id);
             Self::write_staging_buff(
                 instances,
                 &model_buff.instance,
@@ -187,44 +187,24 @@ impl<'render> RenderState<'render> {
         Ok(())
     }
 
-    fn update_buffer_capacity<'a>(&mut self, ecs: &'a ECS) {
-        for renderable in ecs.assets.assets.iter() {
+    fn update_buffer_capacity<'a>(&mut self, asset_manager: &AssetManager) {
+        for renderable in asset_manager.assets.iter() {
             let model_buff = self.model_buffers.get_mut(&renderable.id).unwrap();
-            let instances = Self::get_instance_data2(ecs, &renderable.id);
-            if model_buff.capacity <= instances.len() {
-                let new_capacity = model_buff.capacity * 2;
-                let new_instance_buffer =
-                    Self::create_bigger_instance_buffer(new_capacity, &self.device);
-                // new instance buf size is greater than staging belt size (re-create staging belt)
-                dbg!(&instances.len());
-                if instances.len() >= self.staging_capacity {
-                    dbg!("bigger belt");
-                    let new_staging_capacity = new_capacity * 2;
-                    let new_staging_belt = Self::create_bigger_staging_buffer(new_staging_capacity);
+            let instances = asset_manager.get_instance_data(&renderable.id);
+            if instances.len() > model_buff.capacity {
+                let new_capacity = instances.len() * 2;
+                model_buff.increase_capacity(new_capacity, &self.device);
+                if instances.len() > self.staging_capacity {
+                    let new_staging_capacity = instances.len() * 2;
+                    let new_staging_belt = self.create_bigger_staging_buffer(new_staging_capacity);
                     self.staging_belt = new_staging_belt;
                     self.staging_capacity = new_staging_capacity
                 }
-                dbg!(&self.staging_capacity);
-                dbg!(new_capacity);
-                dbg!("bigger buff");
-                model_buff.instance = new_instance_buffer;
-                model_buff.capacity = new_capacity;
             }
         }
     }
 
-    fn create_bigger_instance_buffer(new_capacity: usize, device: &Device) -> Buffer {
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Instance Buffer"),
-            size: (InstanceRaw::size() * new_capacity) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let new_buffer = instance_buffer;
-        new_buffer
-    }
-
-    fn create_bigger_staging_buffer(new_capacity: usize) -> StagingBelt {
+    fn create_bigger_staging_buffer(&mut self, new_capacity: usize) -> StagingBelt {
         let new_belt = StagingBelt::new((InstanceRaw::size() * new_capacity) as u64);
         new_belt
     }
@@ -273,51 +253,29 @@ impl<'render> RenderState<'render> {
         }))
     }
 
-    fn update_instance_data(&self, ecs: &mut ECS) {
-        let model_ids = ecs
-            .assets
-            .assets
-            .iter()
-            .map(|x| x.id.clone())
-            .collect::<Vec<_>>();
-
-        // gets every model and checks if it needs to be recalculated
-        // if it does get the render from ecs re-calculate to_raw and then update the instance raw
-        // in renderable instances
-        for model in model_ids {
-            let instance = ecs.assets.instances.get(&model).unwrap();
-            let mut re_calculated_instances = Vec::new();
-            for i in 0..instance.instances.len() {
-                if *instance.re_calculate[i].inner() {
-                    let instance_component = ecs.query::<Render>(instance.entity[i]).unwrap();
-                    re_calculated_instances.push((i, instance_component.to_raw()));
+    fn update_instance_data(&self, ecs: &mut ECS, assets_manager: &mut AssetManager) {
+        for asset in assets_manager.assets.iter() {
+            let model = assets_manager.instances.get_mut(&asset.id).unwrap();
+            assert!(model.instances.len() == model.entity.len());
+            assert!(model.instances.len() == model.stale.len());
+            for i in 0..model.instances.len() {
+                if *model.stale[i].inner() {
+                    let instance_component = ecs.query::<Render>(model.entity[i]).unwrap();
+                    model.instances[i] = instance_component.to_raw();
+                    model.stale[i].finish();
                 }
-            }
-
-            let instance = ecs.assets.instances.get_mut(&model).unwrap();
-            for (i, raw) in re_calculated_instances {
-                instance.instances[i] = raw;
-                instance.re_calculate[i].finish();
             }
         }
     }
 
-    fn get_instance_data<'a>(&self, ecs: &'a ECS, model: &TypeId) -> &'a Vec<InstanceRaw> {
-        &ecs.assets.instances.get(model).unwrap().instances
-    }
-
-    fn get_instance_data2<'a>(ecs: &'a ECS, model: &TypeId) -> &'a Vec<InstanceRaw> {
-        &ecs.assets.instances.get(model).unwrap().instances
-    }
-
     fn create_model_buffers(
         device: &Device,
-        ecs: &ECS,
+        asset_manager: &AssetManager,
         capacity: usize,
     ) -> HashMap<TypeId, ModelBuffer> {
         let mut buffers = HashMap::new();
 
-        for renderable in ecs.assets.assets.iter() {
+        for renderable in asset_manager.assets.iter() {
             let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(&renderable.model.vertices),
@@ -377,33 +335,6 @@ impl<'render> RenderState<'render> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         })
     }
-
-    // fn create_instance_buffer(&self, instances: &Vec<InstanceRaw>) -> Buffer {
-    //     self.device
-    //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    //             label: Some("Instance Buffer"),
-    //             contents: bytemuck::cast_slice(instances),
-    //             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-    //         })
-    // }
-
-    // fn create_vertex_buffer(&self, ecs: &ECS) -> Buffer {
-    //     self.device
-    //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    //             label: Some("Vertex Buffer"),
-    //             contents: bytemuck::cast_slice(&ecs.vertices),
-    //             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-    //         })
-    // }
-
-    // fn create_index_buffer(&self, ecs: &ECS) -> Buffer {
-    //     self.device
-    //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    //             label: Some("Index Buffer"),
-    //             contents: bytemuck::cast_slice(ecs.indices),
-    //             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-    //         })
-    // }
 
     fn create_render_pipeline(
         device: &Device,

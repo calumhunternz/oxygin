@@ -1,7 +1,5 @@
 use std::any::TypeId;
 
-use crate::render::asset_manager::{AssetManager, Model};
-
 use super::{Bundle, Bundles, Component, ComponentStorage, EntityMap, ResourceStorage};
 
 use slotmap::DefaultKey;
@@ -12,7 +10,6 @@ pub struct ECS<'a> {
     pub store: ComponentStorage<'a>,
     pub resources: ResourceStorage,
     pub bundles: Bundles,
-    pub assets: AssetManager,
 }
 
 impl<'a> ECS<'a> {
@@ -21,7 +18,6 @@ impl<'a> ECS<'a> {
             store: ComponentStorage::new(),
             resources: ResourceStorage::new(),
             bundles: Bundles::new(),
-            assets: AssetManager::new(),
         }
     }
 
@@ -98,20 +94,6 @@ impl<'a> ECS<'a> {
         T: Bundle + 'static,
     {
         bundle.add_data(&mut self.store, &self.bundles)
-    }
-
-    pub fn register_asset<T>(&mut self, model: T)
-    where
-        T: Into<Model> + 'static,
-    {
-        self.assets.register(model);
-    }
-
-    pub fn add_asset<T>(&mut self, entity: Entity)
-    where
-        T: Into<Model> + 'static,
-    {
-        self.assets.add_asset::<T>(entity);
     }
 }
 

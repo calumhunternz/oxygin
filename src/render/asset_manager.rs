@@ -48,7 +48,13 @@ impl ReCalculate {
 pub struct InstanceContainer {
     pub instances: Vec<InstanceRaw>,
     pub entity: Vec<Entity>,
-    pub re_calculate: Vec<ReCalculate>,
+    pub stale: Vec<ReCalculate>,
+}
+
+pub struct AssetInstance {
+    pub raw: InstanceRaw,
+    pub entity: Entity,
+    pub stale: bool,
 }
 
 impl InstanceContainer {
@@ -56,7 +62,7 @@ impl InstanceContainer {
         Self {
             instances: Vec::new(),
             entity: Vec::new(),
-            re_calculate: Vec::new(),
+            stale: Vec::new(),
         }
     }
 }
@@ -64,6 +70,7 @@ impl InstanceContainer {
 pub struct AssetManager {
     pub assets: Vec<Renderable>,
     pub instances: HashMap<TypeId, InstanceContainer>,
+    pub asset_instance: HashMap<TypeId, Vec<AssetInstance>>,
 }
 
 impl AssetManager {
@@ -71,6 +78,7 @@ impl AssetManager {
         Self {
             assets: Vec::new(),
             instances: HashMap::new(),
+            asset_instance: HashMap::new(),
         }
     }
 
@@ -89,7 +97,7 @@ impl AssetManager {
     {
         let instance = self.instances.get_mut(&TypeId::of::<T>()).unwrap();
         instance.instances.push(InstanceRaw::default());
-        instance.re_calculate.push(ReCalculate::new());
+        instance.stale.push(ReCalculate::new());
         instance.entity.push(entity);
     }
 
@@ -100,9 +108,13 @@ impl AssetManager {
         let instance = self.instances.get_mut(&TypeId::of::<T>()).unwrap();
         for i in 0..instance.entity.len() {
             if instance.entity[i] == entity {
-                instance.re_calculate[i].moved();
+                instance.stale[i].moved();
             }
         }
+    }
+
+    pub fn get_instance_data(&self, model: &TypeId) -> &Vec<InstanceRaw> {
+        &self.instances.get(model).unwrap().instances
     }
 }
 

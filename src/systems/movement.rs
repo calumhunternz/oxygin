@@ -1,11 +1,11 @@
 use crate::{
     components::{InputState, Physics, Render},
     ecs::{Entity, ECS},
-    render::asset_manager::Square,
+    render::asset_manager::{self, AssetManager, Square},
     resources::Player,
 };
 
-pub fn move_system(game: &mut ECS) {
+pub fn move_system(game: &mut ECS, asset_manager: &mut AssetManager) {
     let player = game.resources.get::<Player>().unwrap().into();
     let (input, speed) = gather_data(player, game);
     let position_component = game.get_mut_component::<Render>().unwrap();
@@ -33,7 +33,7 @@ pub fn move_system(game: &mut ECS) {
     }
 
     if moved {
-        game.assets.mark_instance_change::<Square>(player);
+        asset_manager.mark_instance_change::<Square>(player);
     }
 }
 

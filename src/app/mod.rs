@@ -8,12 +8,13 @@ use winit::{
 
 use crate::{
     ecs::ECS,
-    render::RenderState,
+    render::{asset_manager::AssetManager, RenderState},
     systems::{handle_input_system, move_system, spawn_edible},
 };
 
 pub struct App<'a> {
     pub ecs: ECS<'a>,
+    pub assets: AssetManager,
     runner: Scheduler,
 }
 
@@ -56,6 +57,7 @@ impl<'a> App<'a> {
         Self {
             ecs: ECS::new(),
             runner: Scheduler::new(),
+            assets: AssetManager::new(),
         }
     }
 
@@ -68,7 +70,7 @@ impl<'a> App<'a> {
         let window = WindowBuilder::new().build(&event_loop).unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
 
-        let mut state = RenderState::new(&window, &mut self.ecs);
+        let mut state = RenderState::new(&window, &mut self.assets);
         event_loop
             .run(move |event, control_flow| match event {
                 Event::WindowEvent {
@@ -90,7 +92,7 @@ impl<'a> App<'a> {
 
                         self.update();
 
-                        match state.render(&mut self.ecs) {
+                        match state.render(&mut self.ecs, &mut self.assets) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                                 state.resize(state.size)
@@ -108,8 +110,8 @@ impl<'a> App<'a> {
 
     fn update(&mut self) {
         self.runner.tick(|| {
-            move_system(&mut self.ecs);
-            spawn_edible(&mut self.ecs);
+            move_system(&mut self.ecs, &mut self.assets);
+            spawn_edible(&mut self.ecs, &mut self.assets);
         });
     }
 }

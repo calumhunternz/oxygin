@@ -29,9 +29,9 @@ fn init(app: &mut App) {
     app.ecs.add_resource(Player::new(&player));
     let square = Square::new();
     let square2 = Food::new();
-    app.ecs.register_asset(square);
-    app.ecs.register_asset(square2);
-    app.ecs.add_asset::<Square>(player)
+    app.assets.register(square);
+    app.assets.register(square2);
+    app.assets.add_asset::<Square>(player)
 }
 
 fn main() {
