@@ -17,7 +17,19 @@ impl Instance {
     }
 }
 pub fn create_projection_matrix(aspect_ratio: f32) -> Matrix4<f32> {
-    Matrix4::new_nonuniform_scaling(&nalgebra::Vector3::new(1.0 / aspect_ratio, 1.0, 1.0))
+    // let aspect_correction =
+    //     Matrix4::new_nonuniform_scaling(&nalgebra::Vector3::new(1.0 / aspect_ratio, 1.0, 1.0));
+    let ortho_projection = Matrix4::new_orthographic(
+        aspect_ratio / -1.0,
+        aspect_ratio / 1.0,
+        -1.0,
+        1.0,
+        -1.0,
+        1.0,
+    );
+    ortho_projection
+    // aspect_correction
+    // ortho_projection * aspect_correction
 }
 
 #[repr(C)]

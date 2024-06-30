@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use winit::{
+    dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
@@ -12,7 +13,24 @@ use crate::{
     systems::{handle_input_system, move_system, spawn_edible},
 };
 
+pub struct Config {
+    pub aspect_ratio: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            aspect_ratio: 16.0 / 9.0,
+            width: 1500.0,
+            height: 1500.0 / (16.0 / 9.0),
+        }
+    }
+}
+
 pub struct App<'a> {
+    pub config: Config,
     pub ecs: ECS<'a>,
     pub assets: AssetManager,
     runner: Scheduler,
@@ -57,7 +75,8 @@ impl<'a> App<'a> {
         Self {
             ecs: ECS::new(),
             runner: Scheduler::new(),
-            assets: AssetManager::new(),
+            assets: AssetManager::new(16.0 / 9.0),
+            config: Config::default(),
         }
     }
 
@@ -67,7 +86,10 @@ impl<'a> App<'a> {
 
     pub fn run(&mut self) {
         let event_loop = EventLoop::new().unwrap();
-        let window = WindowBuilder::new().build(&event_loop).unwrap();
+        let window = WindowBuilder::new()
+            .with_inner_size(LogicalSize::new(self.config.width, self.config.height))
+            .build(&event_loop)
+            .unwrap();
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let mut state = RenderState::new(&window, &mut self.assets);
@@ -80,7 +102,7 @@ impl<'a> App<'a> {
                     WindowEvent::CloseRequested => control_flow.exit(),
 
                     WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size);
+                        state.resize(*physical_size, self.config.aspect_ratio);
                     }
 
                     WindowEvent::KeyboardInput { event, .. } => {
@@ -95,7 +117,7 @@ impl<'a> App<'a> {
                         match state.render(&mut self.ecs, &mut self.assets) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                                state.resize(state.size)
+                                state.resize(state.size, self.config.aspect_ratio)
                             }
                             Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
                             Err(wgpu::SurfaceError::Timeout) => {}

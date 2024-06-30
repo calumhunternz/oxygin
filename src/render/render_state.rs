@@ -2,18 +2,15 @@ use std::{any::TypeId, collections::HashMap, num::NonZeroU64};
 
 use wgpu::{
     util::{DeviceExt, StagingBelt},
-    Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
-    DeviceDescriptor, Features, InstanceDescriptor, PipelineCompilationOptions, Queue, RenderPass,
-    RequestAdapterOptions, ShaderModule, Surface, SurfaceCapabilities, SurfaceConfiguration,
+    Adapter, Backends, Buffer, CommandEncoder, Device, DeviceDescriptor, Features,
+    InstanceDescriptor, PipelineCompilationOptions, Queue, RenderPass, RequestAdapterOptions,
+    ShaderModule, Surface, SurfaceCapabilities, SurfaceConfiguration,
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{components::Render, ecs::ECS};
 
-use super::{
-    asset_manager::{self, AssetManager},
-    InstanceRaw, Uniforms, Vertex, INDICES, VERTICES,
-};
+use super::{asset_manager::AssetManager, InstanceRaw, Vertex, INDICES, VERTICES};
 
 pub struct ModelBuffer {
     vertex: Buffer,
@@ -54,14 +51,8 @@ pub struct RenderState<'render> {
     pub model_buffers: HashMap<TypeId, ModelBuffer>,
     pub staging_belt: StagingBelt,
     pub staging_capacity: usize,
-    pub vertex_buffer: Option<wgpu::Buffer>,
-    pub index_buffer: Option<wgpu::Buffer>,
     pub num_vertices: u32,
     pub num_indices: u32,
-    pub instance_buffer: Option<wgpu::Buffer>,
-    pub uniforms: Uniforms,
-    pub uniform_buffer: wgpu::Buffer,
-    pub uniform_bind_group: wgpu::BindGroup,
 }
 impl<'render> RenderState<'render> {
     pub fn new(window: &'render Window, asset_manager: &mut AssetManager) -> RenderState<'render> {
@@ -74,12 +65,7 @@ impl<'render> RenderState<'render> {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
         let num_vertices = VERTICES.len() as u32;
         let num_indices = INDICES.len() as u32;
-        let uniforms = Uniforms::new(size.width as f32 / size.height as f32);
-        let uniform_buffer = Self::create_uniform_buffer(uniforms, &device);
-        let (uniform_bind_group, uniform_bind_group_layout) =
-            Self::create_uniform_bind_group(&device, &uniform_buffer);
-        let render_pipeline =
-            Self::create_render_pipeline(&device, &uniform_bind_group_layout, &shader, &config);
+        let render_pipeline = Self::create_render_pipeline(&device, &shader, &config);
         let staging_belt = StagingBelt::new((InstanceRaw::size() * 20) as u64);
 
         let staging_capacity = 20;
@@ -93,17 +79,11 @@ impl<'render> RenderState<'render> {
             config,
             size,
             render_pipeline,
-            vertex_buffer: None,
             model_buffers,
             staging_belt,
             staging_capacity,
             num_vertices,
             num_indices,
-            index_buffer: None,
-            instance_buffer: None,
-            uniforms,
-            uniform_buffer,
-            uniform_bind_group,
         }
     }
 
@@ -111,18 +91,33 @@ impl<'render> RenderState<'render> {
         &self.window
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, aspect_ratio: f32) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
+            let adjusted_size = self.adjust_aspect_ratio(new_size, aspect_ratio);
+
+            self.size = adjusted_size;
+            self.config.width = adjusted_size.width;
+            self.config.height = adjusted_size.height;
             self.surface.configure(&self.device, &self.config);
-            let updated_uniforms = Uniforms::new(new_size.width as f32 / new_size.height as f32);
-            self.queue.write_buffer(
-                &self.uniform_buffer,
-                0,
-                bytemuck::cast_slice(&[updated_uniforms]),
-            );
+        }
+    }
+
+    fn adjust_aspect_ratio(
+        &self,
+        new_size: PhysicalSize<u32>,
+        aspect_ratio: f32,
+    ) -> PhysicalSize<u32> {
+        let new_width = new_size.width as f32;
+        let new_height = new_size.height as f32;
+
+        if new_width / new_height > aspect_ratio {
+            // Width is too large, adjust the width
+            let adjusted_width = (new_height * aspect_ratio).round() as u32;
+            PhysicalSize::new(adjusted_width, new_size.height)
+        } else {
+            // Height is too large, adjust the height
+            let adjusted_height = (new_width / aspect_ratio).round() as u32;
+            PhysicalSize::new(new_size.width, adjusted_height)
         }
     }
 
@@ -170,7 +165,6 @@ impl<'render> RenderState<'render> {
 
         let mut render_pass = self.create_render_pass(&view, &mut encoder)?;
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
         for i in 0..model_buffs.len() {
             render_pass.set_vertex_buffer(0, model_buffs[i].vertex.slice(..));
@@ -301,51 +295,15 @@ impl<'render> RenderState<'render> {
         buffers
     }
 
-    fn create_uniform_bind_group(device: &Device, buffer: &Buffer) -> (BindGroup, BindGroupLayout) {
-        let uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("uniform_bind_group_layout"),
-            });
-
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-            label: Some("uniform_bind_group"),
-        });
-        (uniform_bind_group, uniform_bind_group_layout)
-    }
-
-    fn create_uniform_buffer(uniforms: Uniforms, device: &Device) -> Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })
-    }
-
     fn create_render_pipeline(
         device: &Device,
-        uniform_bind_group_layout: &BindGroupLayout,
         shader: &ShaderModule,
         config: &SurfaceConfiguration,
     ) -> wgpu::RenderPipeline {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[uniform_bind_group_layout],
+                bind_group_layouts: &[],
                 push_constant_ranges: &[],
             });
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

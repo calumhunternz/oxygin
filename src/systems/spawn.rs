@@ -11,7 +11,9 @@ pub fn spawn_edible(game: &mut ECS, asset_manager: &mut AssetManager) {
     let input = game.query_mut::<InputState>(player).unwrap();
 
     if input.space {
-        let food = game.add_bundle(FoodBundle::new()).unwrap();
-        asset_manager.add_asset::<Food>(food)
+        for i in 0..100 {
+            let food = game.add_bundle(FoodBundle::new()).unwrap();
+            asset_manager.add_asset::<Food>(food)
+        }
     }
 }

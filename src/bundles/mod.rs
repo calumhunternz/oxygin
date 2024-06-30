@@ -63,7 +63,7 @@ impl FoodBundle {
                 gx: 0.0,
                 gy: 9.81 / 10.0,
             },
-            render: Render::new(x, y, 0.0, 0.1),
+            render: Render::new(x, y, 0.0, 0.001),
         }
     }
 }

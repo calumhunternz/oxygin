@@ -9,25 +9,35 @@ pub fn move_system(game: &mut ECS, asset_manager: &mut AssetManager) {
     let player = game.resources.get::<Player>().unwrap().into();
     let (input, speed) = gather_data(player, game);
     let position_component = game.get_mut_component::<Render>().unwrap();
-
-    // let speed = 0.050;
     let mut moved = false;
 
     if let Some(player) = position_component.get_mut(player) {
         if input.up {
             player.transform.y = player.transform.y + speed.speed;
+            if player.transform.y > 1.0 {
+                player.transform.y = 1.0;
+            }
             moved = true;
         }
         if input.right {
             player.transform.x = player.transform.x + speed.speed;
+            if player.transform.x > 1.0 {
+                player.transform.x = 1.0;
+            }
             moved = true;
         }
         if input.down {
             player.transform.y = player.transform.y - speed.speed;
+            if player.transform.y < -1.0 {
+                player.transform.y = -1.0;
+            }
             moved = true;
         }
         if input.left {
             player.transform.x = player.transform.x - speed.speed;
+            if player.transform.x < -1.0 {
+                player.transform.x = -1.0;
+            }
             moved = true;
         }
     }

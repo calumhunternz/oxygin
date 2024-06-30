@@ -1,5 +1,7 @@
 use std::{any::TypeId, collections::HashMap};
 
+use nalgebra::Vector3;
+
 use crate::ecs::Entity;
 
 use super::InstanceRaw;
@@ -11,12 +13,14 @@ pub struct Renderable {
 }
 
 impl Renderable {
-    pub fn new<T>(model: T) -> Self
+    pub fn new<T>(model: T, aspect_ratio: f32) -> Self
     where
         T: Into<Model> + 'static,
     {
+        let mut new_model = model.into();
+        new_model.adjust_for_aspect_ratio(aspect_ratio);
         Self {
-            model: model.into(),
+            model: new_model,
             id: TypeId::of::<T>(),
             entities: Vec::new(),
         }
@@ -26,6 +30,20 @@ impl Renderable {
 pub struct Model {
     pub vertices: Vec<ColorVertex>,
     pub indicies: Vec<u16>,
+}
+
+impl Model {
+    pub fn adjust_for_aspect_ratio(&mut self, aspect_ratio: f32) {
+        for vertex in &mut self.vertices {
+            let mut pos = Vector3::new(vertex.position[0], vertex.position[1], vertex.position[2]);
+            if aspect_ratio > 1.0 {
+                pos.x /= aspect_ratio;
+            } else {
+                pos.y *= aspect_ratio;
+            }
+            vertex.position = [pos.x, pos.y, pos.z];
+        }
+    }
 }
 
 pub struct ReCalculate(bool);
@@ -67,18 +85,30 @@ impl InstanceContainer {
     }
 }
 
+pub struct AssetConfig {
+    aspect_ratio: f32,
+}
+
+impl AssetConfig {
+    pub fn new(aspect_ratio: f32) -> Self {
+        Self { aspect_ratio }
+    }
+}
+
 pub struct AssetManager {
+    pub config: AssetConfig,
     pub assets: Vec<Renderable>,
     pub instances: HashMap<TypeId, InstanceContainer>,
     pub asset_instance: HashMap<TypeId, Vec<AssetInstance>>,
 }
 
 impl AssetManager {
-    pub fn new() -> Self {
+    pub fn new(aspect_ratio: f32) -> Self {
         Self {
             assets: Vec::new(),
             instances: HashMap::new(),
             asset_instance: HashMap::new(),
+            config: AssetConfig::new(aspect_ratio),
         }
     }
 
@@ -86,7 +116,8 @@ impl AssetManager {
     where
         T: Into<Model> + 'static,
     {
-        self.assets.push(Renderable::new::<T>(model));
+        self.assets
+            .push(Renderable::new::<T>(model, self.config.aspect_ratio));
         self.instances
             .insert(TypeId::of::<T>(), InstanceContainer::new());
     }
