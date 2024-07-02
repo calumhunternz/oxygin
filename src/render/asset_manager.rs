@@ -6,6 +6,7 @@ use crate::ecs::Entity;
 
 use super::InstanceRaw;
 
+#[derive(Debug)]
 pub struct Renderable {
     pub model: Model,
     pub id: TypeId,
@@ -13,20 +14,16 @@ pub struct Renderable {
 }
 
 impl Renderable {
-    pub fn new<T>(model: T, aspect_ratio: f32) -> Self
-    where
-        T: Into<Model> + 'static,
-    {
-        let mut new_model = model.into();
-        new_model.adjust_for_aspect_ratio(aspect_ratio);
+    pub fn new(model: Model, id: TypeId, aspect_ratio: f32) -> Self {
         Self {
-            model: new_model,
-            id: TypeId::of::<T>(),
+            model,
+            id,
             entities: Vec::new(),
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Model {
     pub vertices: Vec<ColorVertex>,
     pub indicies: Vec<u16>,
@@ -112,14 +109,10 @@ impl AssetManager {
         }
     }
 
-    pub fn register<T>(&mut self, model: T)
-    where
-        T: Into<Model> + 'static,
-    {
+    pub fn register(&mut self, model: Model, id: TypeId) {
         self.assets
-            .push(Renderable::new::<T>(model, self.config.aspect_ratio));
-        self.instances
-            .insert(TypeId::of::<T>(), InstanceContainer::new());
+            .push(Renderable::new(model, id, self.config.aspect_ratio));
+        self.instances.insert(id, InstanceContainer::new());
     }
 
     pub fn add_asset<T>(&mut self, entity: Entity)

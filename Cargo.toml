@@ -18,7 +18,7 @@ rand = "0.8.5"
 slotmap = "1.0.7"
 bundle_derive = { path = "./bundle_derive" }
 wgpu = "0.20.1"
-winit = "0.29.15"
 pollster = "0.3.0"
 bytemuck = { version = "1.16.0", features = ["derive"] }
 nalgebra = "0.32.6"
+winit = "0.30.3"

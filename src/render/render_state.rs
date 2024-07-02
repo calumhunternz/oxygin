@@ -1,4 +1,4 @@
-use std::{any::TypeId, collections::HashMap, num::NonZeroU64};
+use std::{any::TypeId, collections::HashMap, num::NonZeroU64, sync::Arc};
 
 use wgpu::{
     util::{DeviceExt, StagingBelt},
@@ -8,9 +8,16 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{components::Render, ecs::ECS};
+use crate::{
+    components::Render,
+    ecs::{Entity, ECS},
+    resources::Player,
+};
 
-use super::{asset_manager::AssetManager, InstanceRaw, Vertex, INDICES, VERTICES};
+use super::{
+    asset_manager::{AssetManager, Model},
+    InstanceRaw, Vertex, INDICES, VERTICES,
+};
 
 pub struct ModelBuffer {
     vertex: Buffer,
@@ -46,7 +53,7 @@ pub struct RenderState<'render> {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    pub window: &'render Window,
+    // pub window: &'render Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub model_buffers: HashMap<TypeId, ModelBuffer>,
     pub staging_belt: StagingBelt,
@@ -55,7 +62,7 @@ pub struct RenderState<'render> {
     pub num_indices: u32,
 }
 impl<'render> RenderState<'render> {
-    pub fn new(window: &'render Window, asset_manager: &mut AssetManager) -> RenderState<'render> {
+    pub fn new(window: Arc<Window>, asset_manager: &AssetManager) -> RenderState<'render> {
         let size = window.inner_size();
         let instance = Self::get_wgpu_instance();
         let surface = instance.create_surface(window).unwrap();
@@ -69,17 +76,16 @@ impl<'render> RenderState<'render> {
         let staging_belt = StagingBelt::new((InstanceRaw::size() * 20) as u64);
 
         let staging_capacity = 20;
-        let model_buffers = Self::create_model_buffers(&device, &asset_manager, 10);
 
         Self {
-            window,
+            // window,
             surface,
             device,
             queue,
             config,
             size,
             render_pipeline,
-            model_buffers,
+            model_buffers: HashMap::new(),
             staging_belt,
             staging_capacity,
             num_vertices,
@@ -87,9 +93,9 @@ impl<'render> RenderState<'render> {
         }
     }
 
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
+    // pub fn window(&self) -> &Window {
+    //     &self.window
+    // }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, aspect_ratio: f32) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -142,6 +148,8 @@ impl<'render> RenderState<'render> {
             });
 
         self.update_instance_data(game, assets);
+
+        // dbg!(&assets.assets);
 
         self.update_buffer_capacity(assets);
 
@@ -262,37 +270,32 @@ impl<'render> RenderState<'render> {
         }
     }
 
-    fn create_model_buffers(
-        device: &Device,
-        asset_manager: &AssetManager,
-        capacity: usize,
-    ) -> HashMap<TypeId, ModelBuffer> {
-        let mut buffers = HashMap::new();
-
-        for renderable in asset_manager.assets.iter() {
-            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    pub fn register_new_buffer(&mut self, capacity: usize, renderable: &Model, type_id: TypeId) {
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&renderable.model.vertices),
+                contents: bytemuck::cast_slice(&renderable.vertices),
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
-            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&renderable.model.indicies),
+                contents: bytemuck::cast_slice(&renderable.indicies),
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             });
 
-            let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Instance Buffer"),
-                size: (InstanceRaw::size() * capacity) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            buffers.insert(
-                renderable.id,
-                ModelBuffer::new(vertex_buffer, index_buffer, instance_buffer, capacity),
-            );
-        }
-        buffers
+        let instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            size: (InstanceRaw::size() * capacity) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.model_buffers.insert(
+            type_id,
+            ModelBuffer::new(vertex_buffer, index_buffer, instance_buffer, capacity),
+        );
     }
 
     fn create_render_pipeline(
