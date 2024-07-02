@@ -14,7 +14,7 @@ pub struct Renderable {
 }
 
 impl Renderable {
-    pub fn new(model: Model, id: TypeId, aspect_ratio: f32) -> Self {
+    pub fn new(model: Model, id: TypeId) -> Self {
         Self {
             model,
             id,
@@ -23,7 +23,7 @@ impl Renderable {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Model {
     pub vertices: Vec<ColorVertex>,
     pub indicies: Vec<u16>,
@@ -82,36 +82,23 @@ impl InstanceContainer {
     }
 }
 
-pub struct AssetConfig {
-    aspect_ratio: f32,
-}
-
-impl AssetConfig {
-    pub fn new(aspect_ratio: f32) -> Self {
-        Self { aspect_ratio }
-    }
-}
-
 pub struct AssetManager {
-    pub config: AssetConfig,
     pub assets: Vec<Renderable>,
     pub instances: HashMap<TypeId, InstanceContainer>,
     pub asset_instance: HashMap<TypeId, Vec<AssetInstance>>,
 }
 
 impl AssetManager {
-    pub fn new(aspect_ratio: f32) -> Self {
+    pub fn new() -> Self {
         Self {
             assets: Vec::new(),
             instances: HashMap::new(),
             asset_instance: HashMap::new(),
-            config: AssetConfig::new(aspect_ratio),
         }
     }
 
     pub fn register(&mut self, model: Model, id: TypeId) {
-        self.assets
-            .push(Renderable::new(model, id, self.config.aspect_ratio));
+        self.assets.push(Renderable::new(model, id));
         self.instances.insert(id, InstanceContainer::new());
     }
 

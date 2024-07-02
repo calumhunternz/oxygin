@@ -8,11 +8,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{
-    components::Render,
-    ecs::{Entity, ECS},
-    resources::Player,
-};
+use crate::{components::Render, ecs::ECS};
 
 use super::{
     asset_manager::{AssetManager, Model},
@@ -53,7 +49,6 @@ pub struct RenderState<'render> {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    // pub window: &'render Window,
     pub render_pipeline: wgpu::RenderPipeline,
     pub model_buffers: HashMap<TypeId, ModelBuffer>,
     pub staging_belt: StagingBelt,
@@ -62,7 +57,7 @@ pub struct RenderState<'render> {
     pub num_indices: u32,
 }
 impl<'render> RenderState<'render> {
-    pub fn new(window: Arc<Window>, asset_manager: &AssetManager) -> RenderState<'render> {
+    pub fn new(window: Arc<Window>) -> RenderState<'render> {
         let size = window.inner_size();
         let instance = Self::get_wgpu_instance();
         let surface = instance.create_surface(window).unwrap();
@@ -78,7 +73,6 @@ impl<'render> RenderState<'render> {
         let staging_capacity = 20;
 
         Self {
-            // window,
             surface,
             device,
             queue,
@@ -92,10 +86,6 @@ impl<'render> RenderState<'render> {
             num_indices,
         }
     }
-
-    // pub fn window(&self) -> &Window {
-    //     &self.window
-    // }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, aspect_ratio: f32) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -149,8 +139,6 @@ impl<'render> RenderState<'render> {
 
         self.update_instance_data(game, assets);
 
-        // dbg!(&assets.assets);
-
         self.update_buffer_capacity(assets);
 
         let mut model_buffs = Vec::with_capacity(assets.assets.len());
@@ -196,12 +184,12 @@ impl<'render> RenderState<'render> {
             if instances.len() > model_buff.capacity {
                 let new_capacity = instances.len() * 2;
                 model_buff.increase_capacity(new_capacity, &self.device);
-                if instances.len() > self.staging_capacity {
-                    let new_staging_capacity = instances.len() * 2;
-                    let new_staging_belt = self.create_bigger_staging_buffer(new_staging_capacity);
-                    self.staging_belt = new_staging_belt;
-                    self.staging_capacity = new_staging_capacity
-                }
+            }
+            if instances.len() > self.staging_capacity {
+                let new_staging_capacity = instances.len() * 2;
+                let new_staging_belt = self.create_bigger_staging_buffer(new_staging_capacity);
+                self.staging_belt = new_staging_belt;
+                self.staging_capacity = new_staging_capacity
             }
         }
     }

@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
-use oxygin::app::App;
+use oxygin::app::app::App;
 use oxygin::bundles::{FoodBundle, PlayerBundle};
 use oxygin::render::asset_manager::{Food, Square};
 use oxygin::resources::Player;
-use winit::application::ApplicationHandler;
-use winit::window::Window;
 
 // TO IMPROVE
 // I want to remove the call to get ref then get component DONE!!!!!
@@ -22,24 +18,29 @@ use winit::window::Window;
 // Investigate plugins
 //
 
-// fn init(app: &mut App) {
-//     app.ecs.register_bundle::<FoodBundle>();
-//     app.ecs.register_bundle::<PlayerBundle>();
 //
-//     let player = app
-//         .ecs
-//         .add_bundle(PlayerBundle::new(400, 400, 50, 0.5, 0.5, 0.5))
-//         .unwrap();
-//     app.ecs.add_resource(Player::new(&player));
-//     let square = Square::new();
-//     let square2 = Food::new();
-//     app.assets.register(square);
-//     app.assets.register(square2);
-//     app.assets.add_asset::<Square>(player)
-// }
+// Query 2nd attempt
+// Given query i want to get data do some computation with the data
+// example:
+// pub fun move_system(Query<(T1: QueryData, T2: QueryData)>
+// Command -> update the data
+
+fn init(app: &mut App) {
+    app.ecs.register_bundle::<FoodBundle>();
+    app.ecs.register_bundle::<PlayerBundle>();
+
+    let player = app
+        .ecs
+        .add_bundle(PlayerBundle::new(400, 400, 50, 0.5, 0.5, 0.5))
+        .unwrap();
+    app.ecs.add_resource(Player::new(&player));
+    let square = Square::new();
+    let square2 = Food::new();
+    app.register_asset(square);
+    app.register_asset(square2);
+    app.assets.add_asset::<Square>(player);
+}
 
 fn main() {
-    // let mut app = App::new();
-    // app.init(init);
-    App::run();
+    App::run(init);
 }
